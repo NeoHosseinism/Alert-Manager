@@ -2,6 +2,7 @@
 Service model and related tables
 """
 import enum
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 from sqlalchemy import String, Integer, Text, Boolean, DECIMAL, JSON, UniqueConstraint, Index
