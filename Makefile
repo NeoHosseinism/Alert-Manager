@@ -20,7 +20,7 @@ migrate-create:  ## Create new migration (use: make migrate-create MSG="descript
 	fi
 	poetry run alembic revision --autogenerate -m "$(MSG)"
 
-add-user:  ## Add a new user (use: make add-user PHONE=+1234567890 ROLE=admin NAME="John")
+add-user:  ## Add a new user - ROLES: viewer|admin|super_admin (use: make add-user PHONE=+1234567890 ROLE=admin NAME="John")
 	@if [ -z "$(PHONE)" ]; then \
 		echo "Error: PHONE is required."; \
 		echo ""; \

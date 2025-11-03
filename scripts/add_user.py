@@ -24,13 +24,14 @@ async def add_user(phone: str, role: str = "admin", name: str = "User"):
         # Create user
         async with get_session() as session:
             repo = UserRepository(session)
-            user = await repo.create_user(
+            user = await repo.create(
                 phone_number=phone,
                 role=UserRole(role),
-                full_name=name
+                full_name=name,
+                is_active=True
             )
 
-            print(f"\n✅ User created successfully!")
+            print(f"\n[SUCCESS] User created successfully!")
             print(f"   Phone: {user.phone_number}")
             print(f"   Role: {user.role}")
             print(f"   Name: {user.full_name}")
@@ -40,7 +41,7 @@ async def add_user(phone: str, role: str = "admin", name: str = "User"):
         await close_database()
 
     except Exception as e:
-        print(f"\n❌ Error creating user: {e}")
+        print(f"\n[ERROR] Failed to create user: {e}")
         sys.exit(1)
 
 
