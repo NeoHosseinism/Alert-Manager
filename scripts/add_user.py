@@ -24,17 +24,27 @@ async def add_user(phone: str, role: str = "admin", name: str = "User"):
         # Create user
         async with get_session() as session:
             repo = UserRepository(session)
+
+            # Check if user already exists
+            existing_user = await repo.get_by_phone(phone)
+            if existing_user:
+                print(f"\n[INFO] User with phone {phone} already exists!")
+                print(f"   Phone: {existing_user.phone_number}")
+                print(f"   Role: {existing_user.role}")
+                print(f"   Active: {existing_user.is_active}")
+                return
+
+            # Create new user
             user = await repo.create(
                 phone_number=phone,
                 role=UserRole(role),
-                full_name=name,
                 is_active=True
             )
 
             print(f"\n[SUCCESS] User created successfully!")
             print(f"   Phone: {user.phone_number}")
             print(f"   Role: {user.role}")
-            print(f"   Name: {user.full_name}")
+            print(f"   Active: {user.is_active}")
             print(f"\nYou can now message the bot at @{settings.active_bot_username}")
 
         # Close database
