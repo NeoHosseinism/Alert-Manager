@@ -173,7 +173,25 @@ async def start_bot(application: Application) -> None:
 
 async def stop_bot(application: Application) -> None:
     """Stop Telegram bot"""
-    await application.updater.stop()
-    await application.stop()
-    await application.shutdown()
+    if application is None:
+        return
+
+    try:
+        # Only stop updater if it was started
+        if application.updater and application.updater.running:
+            await application.updater.stop()
+    except Exception as e:
+        log.warning("error_stopping_updater", error=str(e))
+
+    try:
+        if application.running:
+            await application.stop()
+    except Exception as e:
+        log.warning("error_stopping_application", error=str(e))
+
+    try:
+        await application.shutdown()
+    except Exception as e:
+        log.warning("error_shutting_down_application", error=str(e))
+
     log.info("telegram_bot_stopped")
