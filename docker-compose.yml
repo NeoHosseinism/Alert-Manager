@@ -29,7 +29,11 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://alert_manager_user:secure_password@postgres:5432/alert_manager_db
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: alert_manager_db
+      DATABASE_USER: alert_manager_user
+      DATABASE_PASSWORD: secure_password
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped

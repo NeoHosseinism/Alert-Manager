@@ -6,12 +6,12 @@ from dataclasses import dataclass
 from typing import Optional
 
 import httpx
-from monitoring_system.config import settings
-from monitoring_system.config.logging import get_logger
-from monitoring_system.models.service import Service
-from monitoring_system.repositories.service_repository import ServiceRepository
-from monitoring_system.core.database import get_session
-from monitoring_system.core.encryption import decrypt_api_key
+from alert_manager.config import settings
+from alert_manager.config.logging import get_logger
+from alert_manager.models.service import Service
+from alert_manager.repositories.service_repository import ServiceRepository
+from alert_manager.core.database import get_session
+from alert_manager.core.encryption import decrypt_api_key
 
 log = get_logger(__name__)
 
@@ -77,7 +77,7 @@ class CreditMonitor:
 
     async def _check_openrouter(self, service: Service) -> CreditCheckResult:
         """
-        Check OpenRouter API credits
+        Check OpenRouter API credits using /api/v1/key endpoint
 
         Args:
             service: Service configuration
@@ -89,20 +89,27 @@ class CreditMonitor:
             # Decrypt API key
             api_key = decrypt_api_key(service.api_key_encrypted)
 
-            # Call OpenRouter API
+            # Call OpenRouter API - using correct endpoint
+            # Endpoint: https://openrouter.ai/api/v1/key
+            # Returns: {"data": {"limit": X, "usage": Y, "limit_remaining": Z, ...}}
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(
-                    f"{settings.openrouter_api_url}/auth/key",
+                    "https://openrouter.ai/api/v1/key",
                     headers={"Authorization": f"Bearer {api_key}"},
                 )
                 response.raise_for_status()
                 data = response.json()
 
-            # Parse response
-            # OpenRouter returns: {"data": {"limit": 100.0, "usage": 75.0}}
-            limit = float(data["data"]["limit"])
-            usage = float(data["data"]["usage"])
-            remaining = limit - usage
+            # Parse response - OpenRouter API v1/key format
+            api_data = data.get("data", {})
+            limit = float(api_data.get("limit", 0))
+            usage = float(api_data.get("usage", 0))
+
+            # Use limit_remaining if available, otherwise calculate
+            if "limit_remaining" in api_data:
+                remaining = float(api_data["limit_remaining"])
+            else:
+                remaining = limit - usage
 
             # Check threshold
             below_threshold = remaining < service.credit_threshold
@@ -120,7 +127,7 @@ class CreditMonitor:
             return CreditCheckResult(success=False, error=f"HTTP error: {e.response.status_code}")
         except httpx.TimeoutException:
             return CreditCheckResult(success=False, error="Request timeout")
-        except KeyError as e:
+        except (KeyError, ValueError) as e:
             return CreditCheckResult(success=False, error=f"Invalid API response format: {e}")
         except Exception as e:
             return CreditCheckResult(success=False, error=str(e))

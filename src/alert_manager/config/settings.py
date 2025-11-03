@@ -20,8 +20,13 @@ class Settings(BaseSettings):
     environment: Literal["dev", "stage", "prod"] = Field(default="prod")
     debug: bool = Field(default=False)
 
-    # Database
-    database_url: str = Field(..., description="PostgreSQL connection string")
+    # Database - Multi-parameter configuration
+    database_host: str = Field(default="localhost", description="Database host")
+    database_port: int = Field(default=5432, description="Database port")
+    database_name: str = Field(default="alert_manager_db", description="Database name")
+    database_user: str = Field(default="alert_manager_user", description="Database user")
+    database_password: str = Field(..., description="Database password")
+    database_driver: str = Field(default="asyncpg", description="Database driver (asyncpg, psycopg2)")
     database_pool_size: int = Field(default=10)
     database_max_overflow: int = Field(default=20)
     database_pool_recycle: int = Field(default=3600, description="Recycle connections after N seconds")
@@ -132,6 +137,23 @@ class Settings(BaseSettings):
         if v > 600:
             raise ValueError("Aggregation window should not exceed 600 seconds")
         return v
+
+    @property
+    def database_url(self) -> str:
+        """Construct database URL from components"""
+        if self.database_driver == "asyncpg":
+            dialect = "postgresql+asyncpg"
+        elif self.database_driver == "psycopg2":
+            dialect = "postgresql+psycopg2"
+        else:
+            dialect = f"postgresql+{self.database_driver}"
+
+        return f"{dialect}://{self.database_user}:{self.database_password}@{self.database_host}:{self.database_port}/{self.database_name}"
+
+    @property
+    def database_sync_url(self) -> str:
+        """Construct synchronous database URL for migrations"""
+        return f"postgresql://{self.database_user}:{self.database_password}@{self.database_host}:{self.database_port}/{self.database_name}"
 
 
 # Create global settings instance
