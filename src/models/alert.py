@@ -9,6 +9,7 @@ from sqlalchemy import (
     String,
     Integer,
     Text,
+    Boolean,
     JSON,
     ARRAY,
     DateTime,
