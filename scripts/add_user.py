@@ -21,6 +21,11 @@ async def add_user(phone: str, role: str = "admin", name: str = "User"):
         # Initialize database
         await init_database()
 
+        # Parse name into first and last
+        name_parts = name.split(maxsplit=1)
+        first_name = name_parts[0] if name_parts else None
+        last_name = name_parts[1] if len(name_parts) > 1 else None
+
         # Create user
         async with get_session() as session:
             repo = UserRepository(session)
@@ -30,6 +35,7 @@ async def add_user(phone: str, role: str = "admin", name: str = "User"):
             if existing_user:
                 print(f"\n[INFO] User with phone {phone} already exists!")
                 print(f"   Phone: {existing_user.phone_number}")
+                print(f"   Name: {existing_user.full_name}")
                 print(f"   Role: {existing_user.role}")
                 print(f"   Active: {existing_user.is_active}")
                 return
@@ -38,11 +44,14 @@ async def add_user(phone: str, role: str = "admin", name: str = "User"):
             user = await repo.create(
                 phone_number=phone,
                 role=UserRole(role),
+                first_name=first_name,
+                last_name=last_name,
                 is_active=True
             )
 
             print(f"\n[SUCCESS] User created successfully!")
             print(f"   Phone: {user.phone_number}")
+            print(f"   Name: {user.full_name}")
             print(f"   Role: {user.role}")
             print(f"   Active: {user.is_active}")
             print(f"\nYou can now message the bot at @{settings.active_bot_username}")

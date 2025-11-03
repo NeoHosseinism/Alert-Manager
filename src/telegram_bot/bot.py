@@ -936,8 +936,11 @@ async def add_service_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             "  • interval - Check interval in seconds (default: 300)\n\n"
             "*Examples:*\n"
             "`/add_service MyAPI health_check https://api.example.com/health`\n"
-            "`/add_service MyAPI health_check https://api.example.com/health 60`\n"
-            "`/add_service OpenRouter api_credit https://openrouter.ai 3600`",
+            "`/add_service OpenRouter-Personal api_credit https://openrouter.ai 3600`\n"
+            "`/add_service OpenRouter-Work api_credit https://openrouter.ai 3600`\n\n"
+            "*Multi-API Key Support:*\n"
+            "Create multiple services with different names for the same URL.\n"
+            "Each can have its own API key via `/set_api_key`",
             parse_mode='Markdown'
         )
         return

@@ -20,11 +20,11 @@ migrate-create:  ## Create new migration (use: make migrate-create MSG="descript
 	fi
 	ENVIRONMENT=dev PYTHONPATH=src poetry run alembic revision --autogenerate -m "$(MSG)"
 
-add-user:  ## Add a new user - ROLES: viewer|admin|super_admin (use: make add-user PHONE=+1234567890 ROLE=admin)
+add-user:  ## Add a new user - ROLES: viewer|admin|super_admin (use: make add-user PHONE=+1234567890 ROLE=admin NAME="John Doe")
 	@if [ -z "$(PHONE)" ]; then \
 		echo "Error: PHONE is required."; \
 		echo ""; \
-		echo "Usage: make add-user PHONE=+1234567890 ROLE=admin"; \
+		echo "Usage: make add-user PHONE=+1234567890 ROLE=admin NAME=\"John Doe\""; \
 		echo ""; \
 		echo "Parameters:"; \
 		echo "  PHONE (required) - Phone number in E.164 format (e.g., +989123456789)"; \
@@ -33,14 +33,15 @@ add-user:  ## Add a new user - ROLES: viewer|admin|super_admin (use: make add-us
 		echo "                     - viewer: Can view alerts only"; \
 		echo "                     - admin: Can manage services and alerts"; \
 		echo "                     - super_admin: Full system access"; \
+		echo "  NAME  (optional) - User's full name (e.g., \"John Doe\")"; \
 		echo ""; \
 		echo "Examples:"; \
-		echo "  make add-user PHONE=+989123456789 ROLE=super_admin"; \
-		echo "  make add-user PHONE=+989123456789 ROLE=admin"; \
+		echo "  make add-user PHONE=+989123456789 ROLE=super_admin NAME=\"Hamidreza Amini\""; \
+		echo "  make add-user PHONE=+989123456789 ROLE=admin NAME=\"John Doe\""; \
 		echo "  make add-user PHONE=+989123456789"; \
 		exit 1; \
 	fi
-	@PYTHONPATH=src poetry run python scripts/add_user.py "$(PHONE)" "$(if $(ROLE),$(ROLE),admin)"
+	@PYTHONPATH=src poetry run python scripts/add_user.py "$(PHONE)" "$(if $(ROLE),$(ROLE),admin)" "$(if $(NAME),$(NAME),User)"
 
 dev:  ## Run application in development mode
 	ENVIRONMENT=dev PYTHONPATH=src poetry run python -m main
