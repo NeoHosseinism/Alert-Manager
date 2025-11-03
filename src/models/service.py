@@ -5,7 +5,7 @@ import enum
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-from sqlalchemy import String, Integer, Text, Boolean, DECIMAL, JSON, UniqueConstraint, Index
+from sqlalchemy import String, Integer, Text, Boolean, DECIMAL, JSON, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models.base import Base, TimestampMixin
@@ -94,8 +94,8 @@ class HealthCheck(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     service_id: Mapped[int] = mapped_column(
-        Integer, nullable=False, index=True
-    )  # No FK to allow orphan cleanup
+        ForeignKey("services.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     is_healthy: Mapped[bool] = mapped_column(Boolean, nullable=False)
     response_time_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     status_code: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
