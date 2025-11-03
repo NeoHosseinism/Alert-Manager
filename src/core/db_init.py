@@ -3,6 +3,7 @@ Database initialization and auto-setup utilities
 Handles database creation and Alembic migrations automatically
 """
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
@@ -159,7 +160,11 @@ async def initialize_database() -> None:
 
         # Step 3: Run migrations to ensure tables exist
         log.info("ensuring_tables_exist")
-        run_migrations()
+
+        # Run migrations in a thread executor to avoid event loop conflicts
+        # (Alembic uses asyncio.run() which can't be called from a running loop)
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, run_migrations)
 
         log.info(
             "database_initialization_complete",
