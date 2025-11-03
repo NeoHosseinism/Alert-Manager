@@ -128,15 +128,16 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user.is_admin:
             message += (
                 "Admin commands:\n"
-                "/assign <phone> <service> - Assign service\n"
-                "/unassign <phone> <service> - Remove access\n\n"
+                "/assign <user_id> <service_id> - Assign service\n"
+                "/unassign <user_id> <service_id> - Remove access\n\n"
             )
 
         if user.is_super_admin:
             message += (
                 "Super Admin commands:\n"
-                "/add_user <phone> <role> - Add user\n"
+                "/add_user <phone> <role> [name] - Add user\n"
                 "/add_service <name> <type> <url> - Add service\n"
+                "/set_api_key <service_id> <key> - Set API key\n"
                 "/list_users - List all users\n"
             )
 
@@ -256,11 +257,19 @@ async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 services = await service_repo.get_user_services(user.id)
 
         if not services:
-            await update.message.reply_text(
-                "[NO SERVICES]\n\n"
-                "You don't have access to any services yet.\n"
-                "Contact your administrator to get access."
-            )
+            if user.is_super_admin:
+                await update.message.reply_text(
+                    "[NO SERVICES]\n\n"
+                    "No services have been created yet.\n\n"
+                    "Use `/add_service` to create your first service.",
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text(
+                    "[NO SERVICES]\n\n"
+                    "You don't have access to any services yet.\n"
+                    "Contact your administrator to get access."
+                )
             return
 
         # Get health status for each service
@@ -362,22 +371,32 @@ async def services_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 services = await service_repo.get_user_services(user.id)
 
         if not services:
-            await update.message.reply_text(
-                "[NO SERVICES]\n\n"
-                "You don't have access to any services yet.\n"
-                "Contact your administrator to get access."
-            )
+            if user.is_super_admin:
+                await update.message.reply_text(
+                    "[NO SERVICES]\n\n"
+                    "No services have been created yet.\n\n"
+                    "Use `/add_service` to create your first service.",
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text(
+                    "[NO SERVICES]\n\n"
+                    "You don't have access to any services yet.\n"
+                    "Contact your administrator to get access."
+                )
             return
 
         # Format services list
         message = f"[YOUR SERVICES] ({len(services)} total)\n\n"
         for service in services:
             status_emoji = "UP" if service.is_active else "DOWN"
+            url = service.endpoint_url or "N/A"
             message += (
-                f"[{status_emoji}] {service.name}\n"
+                f"[{status_emoji}] {service.name} (ID: {service.id})\n"
                 f"   Type: {service.service_type}\n"
                 f"   Environment: {service.environment}\n"
-                f"   URL: {service.url}\n\n"
+                f"   URL: {url}\n"
+                f"   Check Interval: {service.check_interval_seconds}s\n\n"
             )
 
         await update.message.reply_text(message)
@@ -611,18 +630,22 @@ async def assign_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
         await update.message.reply_text(
             "[USAGE]\n\n"
-            "/assign <phone> <service_id>\n\n"
-            "Example: /assign +989123456789 1"
+            "`/assign <user_id> <service_id>`\n\n"
+            "Examples:\n"
+            "`/assign 1 5`\n"
+            "`/assign 2 3`\n\n"
+            "Tip: Use `/list_users` to see user IDs",
+            parse_mode='Markdown'
         )
         return
 
-    phone = context.args[0]
     try:
+        user_id = int(context.args[0])
         service_id = int(context.args[1])
     except ValueError:
         await update.message.reply_text(
             "[INVALID INPUT]\n\n"
-            "Service ID must be a number."
+            "Both user_id and service_id must be numbers."
         )
         return
 
@@ -634,11 +657,13 @@ async def assign_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             service_repo = ServiceRepository(session)
 
             # Get target user
-            target_user = await user_repo.get_by_phone(phone)
+            target_user = await user_repo.get_by_id(user_id)
             if not target_user:
                 await update.message.reply_text(
                     "[USER NOT FOUND]\n\n"
-                    f"No user found with phone: {phone}"
+                    f"No user found with ID: {user_id}\n\n"
+                    "Use `/list_users` to see all user IDs",
+                    parse_mode='Markdown'
                 )
                 return
 
@@ -647,7 +672,9 @@ async def assign_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not service:
                 await update.message.reply_text(
                     "[SERVICE NOT FOUND]\n\n"
-                    f"No service found with ID: {service_id}"
+                    f"No service found with ID: {service_id}\n\n"
+                    "Use `/services` to see all service IDs",
+                    parse_mode='Markdown'
                 )
                 return
 
@@ -664,7 +691,7 @@ async def assign_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if existing:
                 await update.message.reply_text(
                     "[ALREADY ASSIGNED]\n\n"
-                    f"User {phone} already has access to {service.name}"
+                    f"User {target_user.full_name} (ID: {user_id}) already has access to {service.name}"
                 )
                 return
 
@@ -680,8 +707,9 @@ async def assign_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(
             "[SERVICE ASSIGNED]\n\n"
-            f"User: {phone}\n"
-            f"Service: {service.name}\n"
+            f"User: {target_user.full_name} (ID: {user_id})\n"
+            f"Phone: {target_user.phone_number}\n"
+            f"Service: {service.name} (ID: {service_id})\n"
             f"Permissions: Receive alerts, Mute"
         )
 
@@ -715,18 +743,22 @@ async def unassign_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
         await update.message.reply_text(
             "[USAGE]\n\n"
-            "/unassign <phone> <service_id>\n\n"
-            "Example: /unassign +989123456789 1"
+            "`/unassign <user_id> <service_id>`\n\n"
+            "Examples:\n"
+            "`/unassign 1 5`\n"
+            "`/unassign 2 3`\n\n"
+            "Tip: Use `/list_users` to see user IDs",
+            parse_mode='Markdown'
         )
         return
 
-    phone = context.args[0]
     try:
+        user_id = int(context.args[0])
         service_id = int(context.args[1])
     except ValueError:
         await update.message.reply_text(
             "[INVALID INPUT]\n\n"
-            "Service ID must be a number."
+            "Both user_id and service_id must be numbers."
         )
         return
 
@@ -735,15 +767,22 @@ async def unassign_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             from models.user import UserServicePermission
             from sqlalchemy import delete
             user_repo = UserRepository(session)
+            from repositories.service_repository import ServiceRepository
+            service_repo = ServiceRepository(session)
 
             # Get target user
-            target_user = await user_repo.get_by_phone(phone)
+            target_user = await user_repo.get_by_id(user_id)
             if not target_user:
                 await update.message.reply_text(
                     "[USER NOT FOUND]\n\n"
-                    f"No user found with phone: {phone}"
+                    f"No user found with ID: {user_id}\n\n"
+                    "Use `/list_users` to see all user IDs",
+                    parse_mode='Markdown'
                 )
                 return
+
+            # Get service for logging
+            service = await service_repo.get_by_id(service_id)
 
             # Delete permission
             stmt = delete(UserServicePermission).where(
@@ -754,10 +793,12 @@ async def unassign_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await session.commit()
 
         if result.rowcount > 0:
+            service_name = service.name if service else f"ID {service_id}"
             await update.message.reply_text(
                 "[SERVICE UNASSIGNED]\n\n"
-                f"Removed service access for: {phone}\n"
-                f"Service ID: {service_id}"
+                f"User: {target_user.full_name} (ID: {user_id})\n"
+                f"Service: {service_name}\n"
+                f"Access removed successfully"
             )
             log.info(
                 "service_unassigned",
@@ -768,7 +809,7 @@ async def unassign_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text(
                 "[NOT ASSIGNED]\n\n"
-                f"User {phone} doesn't have access to service {service_id}"
+                f"User {target_user.full_name} (ID: {user_id}) doesn't have access to service {service_id}"
             )
 
     except Exception as e:
@@ -794,14 +835,19 @@ async def add_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
         await update.message.reply_text(
             "[USAGE]\n\n"
-            "/add_user <phone> <role>\n\n"
-            "Roles: viewer, admin, super_admin\n"
-            "Example: /add_user +989123456789 admin"
+            "`/add_user <phone> <role> [first_name] [last_name]`\n\n"
+            "Roles: viewer, admin, super_admin\n\n"
+            "Examples:\n"
+            "`/add_user +989123456789 admin`\n"
+            "`/add_user +989123456789 admin John Doe`",
+            parse_mode='Markdown'
         )
         return
 
     phone = context.args[0]
     role = context.args[1]
+    first_name = context.args[2] if len(context.args) > 2 else None
+    last_name = context.args[3] if len(context.args) > 3 else None
 
     from models.user import UserRole
 
@@ -825,6 +871,7 @@ async def add_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(
                     "[USER EXISTS]\n\n"
                     f"User with phone {phone} already exists.\n"
+                    f"Name: {existing_user.full_name}\n"
                     f"Role: {existing_user.role}\n"
                     f"Active: {existing_user.is_active}"
                 )
@@ -834,6 +881,8 @@ async def add_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             new_user = await user_repo.create(
                 phone_number=phone,
                 role=role_enum,
+                first_name=first_name,
+                last_name=last_name,
                 is_active=True
             )
             await session.commit()
@@ -841,7 +890,9 @@ async def add_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "[USER CREATED]\n\n"
             f"Phone: {phone}\n"
+            f"Name: {new_user.full_name}\n"
             f"Role: {role}\n"
+            f"User ID: {new_user.id}\n"
             f"Active: True\n\n"
             "User can now verify their Telegram account by sending /start to this bot."
         )
@@ -851,7 +902,8 @@ async def add_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             admin_id=user.id,
             new_user_id=new_user.id,
             phone=phone,
-            role=role
+            role=role,
+            name=new_user.full_name
         )
 
     except Exception as e:
@@ -877,21 +929,38 @@ async def add_service_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if len(context.args) < 3:
         await update.message.reply_text(
             "[USAGE]\n\n"
-            "/add_service <name> <type> <url>\n\n"
-            "Types: health_check, api_credit\n"
-            "Example: /add_service MyAPI health_check https://api.example.com/health"
+            "`/add_service <name> <type> <url> [interval]`\n\n"
+            "*Types:*\n"
+            "  • health_check - HTTP health check monitoring\n"
+            "  • api_credit - API credit/usage monitoring\n\n"
+            "*Optional Parameters:*\n"
+            "  • interval - Check interval in seconds (default: 300)\n\n"
+            "*Examples:*\n"
+            "`/add_service MyAPI health_check https://api.example.com/health`\n"
+            "`/add_service MyAPI health_check https://api.example.com/health 60`\n"
+            "`/add_service OpenRouter api_credit https://openrouter.ai 3600`",
+            parse_mode='Markdown'
         )
         return
 
     name = context.args[0]
     service_type = context.args[1]
     url = context.args[2]
+    check_interval = int(context.args[3]) if len(context.args) > 3 else 300
 
     # Validate service type
     if service_type not in ["health_check", "api_credit"]:
         await update.message.reply_text(
             "[INVALID TYPE]\n\n"
             "Valid types: health_check, api_credit"
+        )
+        return
+
+    # Validate check interval
+    if check_interval < 30 or check_interval > 86400:  # 30 seconds to 24 hours
+        await update.message.reply_text(
+            "[INVALID INTERVAL]\n\n"
+            "Check interval must be between 30 and 86400 seconds (30s to 24h)"
         )
         return
 
@@ -910,38 +979,167 @@ async def add_service_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 )
                 return
 
+            # Prepare service parameters based on type
+            service_params = {
+                "name": name,
+                "service_type": service_type,
+                "environment": settings.environment,
+                "is_active": True,
+                "check_interval_seconds": check_interval,
+            }
+
+            # Add type-specific parameters
+            if service_type == "health_check":
+                service_params["endpoint_url"] = url
+                service_params["expected_status_code"] = 200
+                service_params["timeout_seconds"] = 10
+            elif service_type == "api_credit":
+                service_params["endpoint_url"] = url
+                service_params["api_provider"] = "openrouter" if "openrouter" in url.lower() else "custom"
+                service_params["credit_check_interval_hours"] = check_interval // 3600 if check_interval >= 3600 else 1
+
             # Create new service
-            new_service = await service_repo.create(
-                name=name,
-                service_type=service_type,
-                url=url,
-                environment=settings.environment,
-                is_active=True,
-                check_interval_seconds=300  # Default 5 minutes
-            )
+            new_service = await service_repo.create(**service_params)
             await session.commit()
 
-        await update.message.reply_text(
+        # Format response based on service type
+        response = (
             "[SERVICE CREATED]\n\n"
             f"Name: {name}\n"
             f"Type: {service_type}\n"
             f"URL: {url}\n"
+            f"Check Interval: {check_interval}s ({check_interval // 60}min)\n"
             f"Environment: {settings.environment}\n"
             f"Service ID: {new_service.id}\n\n"
-            "Use /assign to give users access to this service."
         )
+
+        if service_type == "health_check":
+            response += f"Expected Status: 200\nTimeout: 10s\n\n"
+        elif service_type == "api_credit":
+            provider = service_params["api_provider"]
+            response += f"Provider: {provider}\n\n"
+            if provider == "openrouter":
+                response += "Note: Configure API key with `/set_api_key {new_service.id} <your-key>`\n\n"
+
+        response += f"Use `/assign <user_id> {new_service.id}` to give users access."
+
+        await update.message.reply_text(response, parse_mode='Markdown')
 
         log.info(
             "service_created_via_bot",
             admin_id=user.id,
             service_id=new_service.id,
             name=name,
-            type=service_type
+            type=service_type,
+            check_interval=check_interval
+        )
+
+    except ValueError:
+        await update.message.reply_text(
+            "[INVALID INPUT]\n\n"
+            "Check interval must be a number."
+        )
+    except Exception as e:
+        log.error("add_service_handler_error", error=str(e))
+        await update.message.reply_text(f"Error creating service: {str(e)}")
+
+
+async def set_api_key_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /set_api_key command - set API key for a service (Super Admin only)"""
+    if not await auth_middleware(update, context):
+        return
+
+    user = context.user_data["db_user"]
+
+    if not user.is_super_admin:
+        await update.message.reply_text(
+            "[ACCESS DENIED]\n\n"
+            "This command requires super admin privileges."
+        )
+        return
+
+    # Parse arguments
+    if len(context.args) < 2:
+        await update.message.reply_text(
+            "[USAGE]\n\n"
+            "`/set_api_key <service_id> <api_key>`\n\n"
+            "Examples:\n"
+            "`/set_api_key 1 sk-or-v1-abc123...`\n\n"
+            "Note: The API key will be encrypted before storage",
+            parse_mode='Markdown'
+        )
+        return
+
+    try:
+        service_id = int(context.args[0])
+        api_key = context.args[1]
+    except ValueError:
+        await update.message.reply_text(
+            "[INVALID INPUT]\n\n"
+            "Service ID must be a number."
+        )
+        return
+
+    try:
+        from config import settings
+        from cryptography.fernet import Fernet
+
+        # Encrypt the API key
+        fernet = Fernet(settings.encryption_key.encode())
+        encrypted_key = fernet.encrypt(api_key.encode()).decode()
+
+        async with get_session() as session:
+            from repositories.service_repository import ServiceRepository
+            service_repo = ServiceRepository(session)
+
+            # Get service
+            service = await service_repo.get_by_id(service_id)
+            if not service:
+                await update.message.reply_text(
+                    "[SERVICE NOT FOUND]\n\n"
+                    f"No service found with ID: {service_id}\n\n"
+                    "Use `/services` to see all service IDs",
+                    parse_mode='Markdown'
+                )
+                return
+
+            # Verify it's an API credit service
+            if service.service_type != "api_credit":
+                await update.message.reply_text(
+                    "[INVALID SERVICE TYPE]\n\n"
+                    f"Service '{service.name}' is a {service.service_type} service.\n"
+                    "API keys can only be set for api_credit services."
+                )
+                return
+
+            # Update service with encrypted API key
+            await service_repo.update(service_id, api_key_encrypted=encrypted_key)
+            await session.commit()
+
+        # Delete the message containing the key for security
+        try:
+            await update.message.delete()
+        except:
+            pass  # If deletion fails, continue anyway
+
+        await update.message.reply_text(
+            "[API KEY CONFIGURED]\n\n"
+            f"Service: {service.name} (ID: {service_id})\n"
+            f"API Key: {'*' * 20}...{api_key[-8:]}\n\n"
+            "The API key has been encrypted and stored securely.\n"
+            "Your message containing the key has been deleted for security."
+        )
+
+        log.info(
+            "api_key_set",
+            admin_id=user.id,
+            service_id=service_id,
+            service_name=service.name
         )
 
     except Exception as e:
-        log.error("add_service_handler_error", error=str(e))
-        await update.message.reply_text("Error creating service. Please try again.")
+        log.error("set_api_key_handler_error", error=str(e))
+        await update.message.reply_text(f"Error setting API key: {str(e)}")
 
 
 async def list_users_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1054,6 +1252,7 @@ def create_bot(environment: str) -> Application:
     # Super Admin commands
     application.add_handler(CommandHandler("add_user", add_user_handler))
     application.add_handler(CommandHandler("add_service", add_service_handler))
+    application.add_handler(CommandHandler("set_api_key", set_api_key_handler))
     application.add_handler(CommandHandler("list_users", list_users_handler))
 
     log.info("telegram_bot_created", bot_username=bot_name, handlers=len(application.handlers))
