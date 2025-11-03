@@ -630,7 +630,7 @@ async def assign_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
         await update.message.reply_text(
             "[USAGE]\n\n"
-            "`/assign <user_id> <service_id>`\n\n"
+            "/assign <user_id> <service_id>\n\n"
             "Examples:\n"
             "`/assign 1 5`\n"
             "`/assign 2 3`\n\n"
@@ -743,7 +743,7 @@ async def unassign_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
         await update.message.reply_text(
             "[USAGE]\n\n"
-            "`/unassign <user_id> <service_id>`\n\n"
+            "/unassign <user_id> <service_id>\n\n"
             "Examples:\n"
             "`/unassign 1 5`\n"
             "`/unassign 2 3`\n\n"
@@ -835,12 +835,11 @@ async def add_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
         await update.message.reply_text(
             "[USAGE]\n\n"
-            "`/add_user <phone> <role> [first_name] [last_name]`\n\n"
+            "/add_user <phone> <role> [first_name] [last_name]\n\n"
             "Roles: viewer, admin, super_admin\n\n"
             "Examples:\n"
-            "`/add_user +989123456789 admin`\n"
-            "`/add_user +989123456789 admin John Doe`",
-            parse_mode='Markdown'
+            "/add_user +989123456789 admin\n"
+            "/add_user +989123456789 admin John Doe"
         )
         return
 
@@ -929,7 +928,7 @@ async def add_service_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if len(context.args) < 3:
         await update.message.reply_text(
             "[USAGE]\n\n"
-            "`/add_service <name> <type> <url> [interval]`\n\n"
+            "/add_service <name> <type> <url> [interval]\n\n"
             "*Types:*\n"
             "  • health_check - HTTP health check monitoring\n"
             "  • api_credit - API credit/usage monitoring\n\n"
@@ -1062,7 +1061,7 @@ async def set_api_key_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if len(context.args) < 2:
         await update.message.reply_text(
             "[USAGE]\n\n"
-            "`/set_api_key <service_id> <api_key>`\n\n"
+            "/set_api_key <service_id> <api_key>\n\n"
             "Examples:\n"
             "`/set_api_key 1 sk-or-v1-abc123...`\n\n"
             "Note: The API key will be encrypted before storage",
