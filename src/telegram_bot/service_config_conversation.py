@@ -96,15 +96,15 @@ async def choose_service_type(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if service_type == "health_check":
         # Simple flow for health check
-        await query.edit_message_text(
+        msg = (
             "*SERVICE SETUP \\- Step 2/5*\n\n"
             "Enter service details in this format:\n\n"
             "<name> <url> \\[interval\\_seconds\\]\n\n"
             "Example:\n"
             "`MyAPI https://api\\.example\\.com/health 300`\n\n"
-            "Or type /cancel to cancel\\.",
-            parse_mode='MarkdownV2'
+            "Or type /cancel to cancel\\."
         )
+        await query.edit_message_text(msg, parse_mode='MarkdownV2')
         return ENTER_BASIC_INFO
 
     # API Credit flow - ask about provider mode
@@ -161,16 +161,16 @@ async def choose_provider_mode(update: Update, context: ContextTypes.DEFAULT_TYP
         return SELECT_PROVIDER
 
     # Custom provider flow
-    await query.edit_message_text(
+    msg = (
         "*SERVICE SETUP \\- Step 3/5*\n\n"
         "Let's configure your custom API provider\\.\n\n"
         "First, enter the service name and base URL:\n\n"
         "<service\\_name> <base\\_url>\n\n"
         "Example:\n"
         "`MyAPI https://api\\.myprovider\\.com`\n\n"
-        "Or type /cancel to cancel\\.",
-        parse_mode='MarkdownV2'
+        "Or type /cancel to cancel\\."
     )
+    await query.edit_message_text(msg, parse_mode='MarkdownV2')
 
     return CUSTOM_BASE_URL
 
@@ -196,19 +196,19 @@ async def select_provider(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Show provider details and ask for service name and custom base URL (optional)
     endpoints_info = "\n".join([f"  • {ep.name}: {ep.path}" for ep in provider.endpoints])
 
-    await query.edit_message_text(
-        f"*SERVICE SETUP \\- Step 4/5*\n\n"
+    msg = (
+        "*SERVICE SETUP \\- Step 4/5*\n\n"
         f"Provider: {escape_markdown_v2(provider.name)}\n"
         f"Default Base URL: {escape_markdown_v2(provider.base_url)}\n"
         f"Endpoints:\n{escape_markdown_v2(endpoints_info)}\n\n"
-        f"Enter service name and optional custom base URL:\n\n"
-        f"<service\\_name> \\[custom\\_base\\_url\\]\n\n"
-        f"Examples:\n"
+        "Enter service name and optional custom base URL:\n\n"
+        "<service\\_name> \\[custom\\_base\\_url\\]\n\n"
+        "Examples:\n"
         f"`MyOpenRouter`  \\(uses default {escape_markdown_v2(provider.base_url)}\\)\n"
-        f"`MyCustom https://custom\\.openrouter\\.ai`\n\n"
-        f"Or type /cancel to cancel\\.",
-        parse_mode='MarkdownV2'
+        "`MyCustom https://custom\\.openrouter\\.ai`\n\n"
+        "Or type /cancel to cancel\\."
     )
+    await query.edit_message_text(msg, parse_mode='MarkdownV2')
 
     return ENTER_BASIC_INFO
 
@@ -227,12 +227,12 @@ async def handle_basic_info(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     if service_type == "health_check":
         if len(parts) < 2:
-            await update.message.reply_text(
+            msg = (
                 "*INVALID INPUT*\n\n"
                 "Please provide at least name and URL\\.\n\n"
-                "Format: <name> <url> \\[interval\\_seconds\\]",
-                parse_mode='MarkdownV2'
+                "Format: <name> <url> \\[interval\\_seconds\\]"
             )
+            await update.message.reply_text(msg, parse_mode='MarkdownV2')
             return ENTER_BASIC_INFO
 
         service_config["name"] = parts[0]
@@ -306,20 +306,20 @@ async def handle_endpoint_count(update: Update, context: ContextTypes.DEFAULT_TY
     service_config["endpoints"] = []
 
     # Start configuring first endpoint
-    await update.message.reply_text(
+    msg = (
         f"*SERVICE SETUP \\- Endpoint 1/{count}*\n\n"
-        f"Configure endpoint 1:\n\n"
-        f"Enter endpoint details in JSON format:\n\n"
-        f"```json\n"
-        f"{{\n"
-        f'  "name": "key_info",\n'
-        f'  "path": "/api/v1/key",\n'
-        f'  "method": "GET"\n'
-        f"}}\n"
-        f"```\n\n"
-        f"Or type /cancel to cancel\\.",
-        parse_mode='MarkdownV2'
+        "Configure endpoint 1:\n\n"
+        "Enter endpoint details in JSON format:\n\n"
+        "```json\n"
+        "{\n"
+        '  "name": "key_info",\n'
+        '  "path": "/api/v1/key",\n'
+        '  "method": "GET"\n'
+        "}\n"
+        "```\n\n"
+        "Or type /cancel to cancel\\."
     )
+    await update.message.reply_text(msg, parse_mode='MarkdownV2')
 
     return CUSTOM_ENDPOINT_CONFIG
 
@@ -349,20 +349,21 @@ async def handle_endpoint_config(update: Update, context: ContextTypes.DEFAULT_T
 
         if current < total:
             # Configure next endpoint
-            await update.message.reply_text(
-                f"*SERVICE SETUP \\- Endpoint {current \\+ 1}/{total}*\n\n"
-                f"Configure endpoint {current \\+ 1}:\n\n"
-                f"Enter endpoint details in JSON format:\n\n"
-                f"```json\n"
-                f"{{\n"
-                f'  "name": "credits",\n'
-                f'  "path": "/api/v1/credits",\n'
-                f'  "method": "GET"\n'
-                f"}}\n"
-                f"```\n\n"
-                f"Or type /cancel to cancel\\.",
-                parse_mode='MarkdownV2'
+            next_num = current + 1
+            msg = (
+                f"*SERVICE SETUP \\- Endpoint {next_num}/{total}*\n\n"
+                f"Configure endpoint {next_num}:\n\n"
+                "Enter endpoint details in JSON format:\n\n"
+                "```json\n"
+                "{\n"
+                '  "name": "credits",\n'
+                '  "path": "/api/v1/credits",\n'
+                '  "method": "GET"\n'
+                "}\n"
+                "```\n\n"
+                "Or type /cancel to cancel\\."
             )
+            await update.message.reply_text(msg, parse_mode='MarkdownV2')
             return CUSTOM_ENDPOINT_CONFIG
 
         # All endpoints configured - now ask for field mappings
@@ -406,21 +407,21 @@ async def handle_field_mapping(update: Update, context: ContextTypes.DEFAULT_TYP
         # Start mapping first endpoint
         endpoint = service_config["endpoints"][0]
         metrics_list = escape_markdown_v2("\n".join([f"  • {key}" for key in list(STANDARD_METRICS.keys())[:10]]))
-        await update.message.reply_text(
+        msg = (
             f"*FIELD MAPPING \\- Endpoint: {escape_markdown_v2(endpoint['name'])}*\n\n"
-            f"Enter field mappings in JSON format:\n\n"
-            f"```json\n"
-            f"{{\n"
-            f'  "balance": "remaining_credit",\n'
-            f'  "limit": "total_credit",\n'
-            f'  "used": "total_usage"\n'
-            f"}}\n"
-            f"```\n\n"
-            f"Map your API's field names \\(left\\) to standard metrics \\(right\\)\\.\n\n"
+            "Enter field mappings in JSON format:\n\n"
+            "```json\n"
+            "{\n"
+            '  "balance": "remaining_credit",\n'
+            '  "limit": "total_credit",\n'
+            '  "used": "total_usage"\n'
+            "}\n"
+            "```\n\n"
+            "Map your API's field names \\(left\\) to standard metrics \\(right\\)\\.\n\n"
             f"Available standard metrics:\n{metrics_list}"
-            f"\n\nOr type /cancel:",
-            parse_mode='MarkdownV2'
+            "\n\nOr type /cancel:"
         )
+        await update.message.reply_text(msg, parse_mode='MarkdownV2')
         return CUSTOM_FIELD_MAPPING
 
     try:
@@ -574,17 +575,17 @@ async def confirm_config(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             new_service = await service_repo.create(**service_params)
             await session.commit()
 
-        await query.edit_message_text(
+        msg = (
             "*SERVICE CREATED*\n\n"
             f"Service: {escape_markdown_v2(new_service.name)}\n"
             f"ID: {new_service.id}\n"
-            f"Type: API Credit Tracking\n\n"
-            f"Next steps:\n"
+            "Type: API Credit Tracking\n\n"
+            "Next steps:\n"
             f"1\\. Set API key: `/set_api_key {new_service.id} <key>`\n"
             f"2\\. Assign users: `/assign <user_id> {new_service.id}`\n"
-            f"3\\. Edit if needed: `/edit_service {new_service.id}`",
-            parse_mode='MarkdownV2'
+            f"3\\. Edit if needed: `/edit_service {new_service.id}`"
         )
+        await query.edit_message_text(msg, parse_mode='MarkdownV2')
 
         log.info(
             "service_created_interactive",
