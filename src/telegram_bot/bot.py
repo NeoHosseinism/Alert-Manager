@@ -117,11 +117,12 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Welcome, {user.telegram_username or 'User'}!\n\n"
             f"Your role: {user.role}\n\n"
             f"Available commands:\n"
+            f"/help - Show detailed help\n"
             f"/status - Show service status\n"
             f"/services - List your services\n"
             f"/alerts - Recent alerts\n"
-            f"/mute <service> <hours> - Mute alerts\n"
-            f"/unmute <service> - Unmute alerts\n"
+            f"/mute <service_id> <hours> - Mute alerts\n"
+            f"/unmute <service_id> - Unmute alerts\n"
             f"/muted - Show muted services\n\n"
         )
 
@@ -135,10 +136,12 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user.is_super_admin:
             message += (
                 "Super Admin commands:\n"
-                "/add_user <phone> <role> [name] - Add user\n"
-                "/add_service <name> <type> <url> - Add service\n"
-                "/set_api_key <service_id> <key> - Set API key\n"
+                "/add_user <phone> <role> [first_name] [last_name] - Add user\n"
+                "/edit_user <user_id> <field> <value> - Edit user\n"
                 "/list_users - List all users\n"
+                "/add_service - Add service (interactive)\n"
+                "/set_api_key <service_id> <key> - Set API key\n"
+                "/set_tracking <service_id> [...] - Configure tracking\n"
             )
 
         await update.message.reply_text(message, reply_markup=ReplyKeyboardRemove())
@@ -345,11 +348,50 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await auth_middleware(update, context):
         return
 
-    await update.message.reply_text(
-        "[HELP]\n\n"
-        "For detailed documentation, see README.md\n"
-        "Contact your administrator for assistance."
+    user = context.user_data["db_user"]
+
+    help_text = (
+        "[HELP - Alert Manager]\n\n"
+        "=== USER COMMANDS ===\n\n"
+        "/start - Show welcome message\n"
+        "/help - Show this help message\n"
+        "/status - Show real-time service status\n"
+        "/services - List services you have access to\n"
+        "/alerts - View recent alerts\n"
+        "/mute <service_id> <hours> - Mute alerts for a service\n"
+        "/unmute <service_id> - Unmute alerts for a service\n"
+        "/muted - List all muted services\n\n"
     )
+
+    if user.is_admin:
+        help_text += (
+            "=== ADMIN COMMANDS ===\n\n"
+            "/assign <user_id> <service_id> - Assign service to user\n"
+            "/unassign <user_id> <service_id> - Remove user access\n\n"
+        )
+
+    if user.is_super_admin:
+        help_text += (
+            "=== SUPER ADMIN COMMANDS ===\n\n"
+            "User Management:\n"
+            "/add_user <phone> <role> [first_name] [last_name]\n"
+            "  Roles: viewer, admin, super_admin\n"
+            "  Example: /add_user +1234567890 admin John Doe\n\n"
+            "/edit_user <user_id> <field> <value>\n"
+            "  Fields: first_name, last_name, role, is_active\n"
+            "  Example: /edit_user 5 role admin\n\n"
+            "/list_users - List all users in the system\n\n"
+            "Service Management:\n"
+            "/add_service - Interactive service creation\n"
+            "  Supports pre-defined providers (OpenRouter) and custom APIs\n\n"
+            "/set_api_key <service_id> <api_key>\n"
+            "  Set encrypted API key for credit tracking\n\n"
+            "/set_tracking <service_id> [methods] [paths...]\n"
+            "  Configure API tracking methods (optional)\n\n"
+            "For detailed documentation, see PROVIDER_SYSTEM.md"
+        )
+
+    await update.message.reply_text(help_text)
 
 
 async def services_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
