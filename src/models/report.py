@@ -8,7 +8,7 @@ from typing import Optional, List
 from sqlalchemy import String, Integer, Boolean, DateTime, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
-from monitoring_system.models.base import Base, TimestampMixin
+from models.base import Base, TimestampMixin
 
 
 class ReportFrequency(str, enum.Enum):

@@ -6,8 +6,8 @@ from datetime import datetime, timedelta
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from monitoring_system.models.alert import Alert, MutedService, PendingAlertBatch
-from monitoring_system.repositories.base_repository import BaseRepository
+from models.alert import Alert, MutedService, PendingAlertBatch
+from repositories.base_repository import BaseRepository
 
 
 class AlertRepository(BaseRepository[Alert]):

@@ -6,12 +6,12 @@ from dataclasses import dataclass
 from typing import Optional
 
 import httpx
-from alert_manager.config import settings
-from alert_manager.config.logging import get_logger
-from alert_manager.models.service import Service
-from alert_manager.repositories.service_repository import ServiceRepository
-from alert_manager.core.database import get_session
-from alert_manager.core.encryption import decrypt_api_key
+from config import settings
+from config.logging import get_logger
+from models.service import Service
+from repositories.service_repository import ServiceRepository
+from core.database import get_session
+from core.encryption import decrypt_api_key
 
 log = get_logger(__name__)
 

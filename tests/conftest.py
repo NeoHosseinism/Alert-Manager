@@ -7,8 +7,8 @@ from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
-from monitoring_system.models.base import Base
-from monitoring_system.config import settings
+from models.base import Base
+from config import settings
 
 
 @pytest.fixture(scope="session")

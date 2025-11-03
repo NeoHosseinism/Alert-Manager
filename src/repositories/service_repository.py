@@ -6,9 +6,9 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from monitoring_system.models.service import Service, HealthCheck
-from monitoring_system.models.user import UserServicePermission
-from monitoring_system.repositories.base_repository import BaseRepository
+from models.service import Service, HealthCheck
+from models.user import UserServicePermission
+from repositories.base_repository import BaseRepository
 
 
 class ServiceRepository(BaseRepository[Service]):

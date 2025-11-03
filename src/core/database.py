@@ -12,8 +12,8 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool, QueuePool
 
-from monitoring_system.config import settings
-from monitoring_system.config.logging import get_logger
+from config import settings
+from config.logging import get_logger
 
 log = get_logger(__name__)
 

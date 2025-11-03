@@ -8,7 +8,7 @@ from typing import Optional, List
 from sqlalchemy import String, Boolean, BigInteger, Integer, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from monitoring_system.models.base import Base, TimestampMixin
+from models.base import Base, TimestampMixin
 
 
 class UserRole(str, enum.Enum):

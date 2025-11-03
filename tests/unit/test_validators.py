@@ -3,7 +3,7 @@ Unit tests for validation utilities
 """
 import pytest
 
-from monitoring_system.utils.validators import (
+from utils.validators import (
     validate_phone_number,
     validate_url,
     validate_api_key,
@@ -11,7 +11,7 @@ from monitoring_system.utils.validators import (
     validate_interval,
     sanitize_message,
 )
-from monitoring_system.core.exceptions import ValidationException
+from core.exceptions import ValidationException
 
 
 class TestPhoneValidation:

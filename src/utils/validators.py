@@ -3,7 +3,7 @@ Validation utilities
 """
 import re
 from typing import Optional
-from monitoring_system.core.exceptions import ValidationException
+from core.exceptions import ValidationException
 
 
 def validate_phone_number(phone: str) -> bool:

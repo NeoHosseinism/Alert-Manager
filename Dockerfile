@@ -50,6 +50,9 @@ COPY --chown=appuser:appuser . .
 # Switch to non-root user
 USER appuser
 
+# Set Python path to find modules in src/
+ENV PYTHONPATH=/app/src
+
 # Expose port (if needed for future features)
 EXPOSE 8000
 
@@ -58,4 +61,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import sys; sys.exit(0)"
 
 # Run migrations and start app
-CMD ["sh", "-c", "alembic upgrade head && python -m monitoring_system.main"]
+CMD ["sh", "-c", "alembic upgrade head && python -m main"]

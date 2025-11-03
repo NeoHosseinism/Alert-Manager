@@ -5,10 +5,10 @@ This is a simplified but functional implementation with key features.
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
-from monitoring_system.config import settings
-from monitoring_system.config.logging import get_logger
-from monitoring_system.repositories.user_repository import UserRepository
-from monitoring_system.core.database import get_session
+from config import settings
+from config.logging import get_logger
+from repositories.user_repository import UserRepository
+from core.database import get_session
 
 log = get_logger(__name__)
 

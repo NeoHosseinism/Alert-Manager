@@ -2,8 +2,8 @@
 Encryption utilities using Fernet for API key encryption
 """
 from cryptography.fernet import Fernet, InvalidToken
-from monitoring_system.core.exceptions import EncryptionException
-from monitoring_system.config import settings
+from core.exceptions import EncryptionException
+from config import settings
 
 
 class EncryptionService:

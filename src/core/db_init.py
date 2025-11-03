@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import command
 from alembic.config import Config
 
-from alert_manager.config import settings
-from alert_manager.config.logging import get_logger
+from config import settings
+from config.logging import get_logger
 
 log = get_logger(__name__)
 

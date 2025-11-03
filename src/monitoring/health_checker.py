@@ -8,12 +8,12 @@ from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
 
 import httpx
-from monitoring_system.config import settings
-from monitoring_system.config.logging import get_logger
-from monitoring_system.models.service import Service
-from monitoring_system.repositories.service_repository import ServiceRepository
-from monitoring_system.core.database import get_session
-from monitoring_system.utils.retry import async_retry
+from config import settings
+from config.logging import get_logger
+from models.service import Service
+from repositories.service_repository import ServiceRepository
+from core.database import get_session
+from utils.retry import async_retry
 
 log = get_logger(__name__)
 

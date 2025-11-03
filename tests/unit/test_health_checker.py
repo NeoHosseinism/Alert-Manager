@@ -4,8 +4,8 @@ Unit tests for health checker
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 
-from monitoring_system.monitoring.health_checker import HealthChecker, HealthCheckResult
-from monitoring_system.models.service import Service
+from monitoring.health_checker import HealthChecker, HealthCheckResult
+from models.service import Service
 
 
 @pytest.fixture

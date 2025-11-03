@@ -5,7 +5,7 @@ import asyncio
 from functools import wraps
 from typing import Callable, Tuple, Type, TypeVar
 
-from monitoring_system.config.logging import get_logger
+from config.logging import get_logger
 
 log = get_logger(__name__)
 

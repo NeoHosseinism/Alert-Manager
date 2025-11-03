@@ -15,11 +15,11 @@ from pathlib import Path
 # Add src directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from monitoring_system.models.base import Base
-from monitoring_system.config import settings
+from models.base import Base
+from config import settings
 
 # Import all models to ensure they're registered with Base
-from monitoring_system.models import (
+from models import (
     User,
     Service,
     Alert,
@@ -27,9 +27,9 @@ from monitoring_system.models import (
     PendingAlertBatch,
     ReportSchedule,
 )
-from monitoring_system.models.user import UserServicePermission
-from monitoring_system.models.service import HealthCheck
-from monitoring_system.models.alert import AlertArchiveConfig, SystemConfig
+from models.user import UserServicePermission
+from models.service import HealthCheck
+from models.alert import AlertArchiveConfig, SystemConfig
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

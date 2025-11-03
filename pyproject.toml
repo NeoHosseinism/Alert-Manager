@@ -4,7 +4,6 @@ version = "1.0.0"
 description = "Production-Ready IT Infrastructure Monitoring & Alert System"
 authors = ["Alert Manager Team <alertmanager@example.com>"]
 readme = "README.md"
-packages = [{include = "alert_manager", from = "src"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -43,7 +42,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --strict-markers --cov=src/alert_manager"
+addopts = "-v --strict-markers --cov=src"
 
 [tool.coverage.run]
 source = ["src"]

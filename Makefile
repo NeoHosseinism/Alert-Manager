@@ -21,10 +21,10 @@ migrate-create:  ## Create new migration (use: make migrate-create MSG="descript
 	poetry run alembic revision --autogenerate -m "$(MSG)"
 
 dev:  ## Run application in development mode
-	ENVIRONMENT=dev poetry run python -m alert_manager.main
+	ENVIRONMENT=dev PYTHONPATH=src poetry run python -m main
 
 test:  ## Run tests with coverage
-	poetry run pytest tests/ -v --cov=alert_manager --cov-report=html --cov-report=term-missing
+	PYTHONPATH=src poetry run pytest tests/ -v --cov=src --cov-report=html --cov-report=term-missing
 
 docker-build:  ## Build Docker image
 	docker build -t alert-manager:latest .

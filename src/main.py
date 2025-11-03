@@ -9,13 +9,13 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from alert_manager.config import settings
-from alert_manager.config.logging import configure_logging, get_logger
-from alert_manager.core.database import init_database, close_database
-from alert_manager.core.db_init import initialize_database
-from alert_manager.telegram.bot import create_bot, start_bot, stop_bot
-from alert_manager.monitoring.health_checker import HealthChecker
-from alert_manager.monitoring.credit_monitor import CreditMonitor
+from config import settings
+from config.logging import configure_logging, get_logger
+from core.database import init_database, close_database
+from core.db_init import initialize_database
+from telegram.bot import create_bot, start_bot, stop_bot
+from monitoring.health_checker import HealthChecker
+from monitoring.credit_monitor import CreditMonitor
 
 # Configure logging first
 configure_logging(settings.environment, settings.log_level)

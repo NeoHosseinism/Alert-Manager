@@ -6,7 +6,7 @@ from typing import Optional
 
 from persiantools.jdatetime import JalaliDate, JalaliDateTime
 
-from monitoring_system.config.logging import get_logger
+from config.logging import get_logger
 
 log = get_logger(__name__)
 

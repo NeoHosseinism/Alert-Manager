@@ -6,14 +6,14 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 
-from monitoring_system.config import settings
-from monitoring_system.config.logging import get_logger
-from monitoring_system.models.alert import Alert, AlertSeverity
-from monitoring_system.models.service import Service
-from monitoring_system.repositories.alert_repository import AlertRepository
-from monitoring_system.repositories.user_repository import UserRepository
-from monitoring_system.repositories.service_repository import ServiceRepository
-from monitoring_system.core.database import get_session
+from config import settings
+from config.logging import get_logger
+from models.alert import Alert, AlertSeverity
+from models.service import Service
+from repositories.alert_repository import AlertRepository
+from repositories.user_repository import UserRepository
+from repositories.service_repository import ServiceRepository
+from core.database import get_session
 
 log = get_logger(__name__)
 

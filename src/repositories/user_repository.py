@@ -5,8 +5,8 @@ from typing import Optional, List
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from monitoring_system.models.user import User, UserServicePermission
-from monitoring_system.repositories.base_repository import BaseRepository
+from models.user import User, UserServicePermission
+from repositories.base_repository import BaseRepository
 
 
 class UserRepository(BaseRepository[User]):

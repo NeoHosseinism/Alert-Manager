@@ -18,7 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from monitoring_system.models.base import Base, TimestampMixin
+from models.base import Base, TimestampMixin
 
 
 class AlertSeverity(str, enum.Enum):
@@ -177,6 +177,6 @@ class SystemConfig(Base):
 
 
 # Import to resolve forward references
-from monitoring_system.models.service import Service
-from monitoring_system.models.user import User
+from models.service import Service
+from models.user import User
 from sqlalchemy import Boolean

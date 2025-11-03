@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any
 from sqlalchemy import String, Integer, Text, Boolean, DECIMAL, JSON, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from monitoring_system.models.base import Base, TimestampMixin
+from models.base import Base, TimestampMixin
 
 
 class ServiceType(str, enum.Enum):
@@ -111,5 +111,5 @@ class HealthCheck(Base):
 
 
 # Import UserServicePermission to avoid circular import
-from monitoring_system.models.user import UserServicePermission
-from monitoring_system.models.alert import Alert, MutedService
+from models.user import UserServicePermission
+from models.alert import Alert, MutedService
