@@ -240,11 +240,93 @@ async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await auth_middleware(update, context):
         return
 
-    await update.message.reply_text(
-        "[SERVICE STATUS]\n\n"
-        "Fetching current status...\n"
-        "(Full implementation connects to ServiceRepository)"
-    )
+    user = context.user_data["db_user"]
+
+    try:
+        async with get_session() as session:
+            from repositories.service_repository import ServiceRepository
+            service_repo = ServiceRepository(session)
+
+            # Get services based on role
+            if user.is_super_admin:
+                services = await service_repo.get_active_services()
+            else:
+                services = await service_repo.get_user_services(user.id)
+
+        if not services:
+            await update.message.reply_text(
+                "[NO SERVICES]\n\n"
+                "You don't have access to any services yet.\n"
+                "Contact your administrator to get access."
+            )
+            return
+
+        # Get health status for each service
+        message = f"[SERVICE STATUS] ({len(services)} services)\n\n"
+
+        async with get_session() as session:
+            service_repo = ServiceRepository(session)
+
+            for service in services:
+                # Get latest health check
+                health_check = await service_repo.get_latest_health_check(service.id)
+
+                if health_check:
+                    if health_check.is_healthy:
+                        status_icon = "[UP]"
+                        status_color = "HEALTHY"
+                    else:
+                        status_icon = "[DOWN]"
+                        status_color = "UNHEALTHY"
+
+                    # Calculate time since last check
+                    time_diff = datetime.utcnow() - health_check.checked_at
+                    if time_diff.total_seconds() < 60:
+                        last_check = "just now"
+                    elif time_diff.total_seconds() < 3600:
+                        minutes = int(time_diff.total_seconds() / 60)
+                        last_check = f"{minutes}m ago"
+                    else:
+                        hours = int(time_diff.total_seconds() / 3600)
+                        last_check = f"{hours}h ago"
+
+                    message += f"{status_icon} {service.name}\n"
+                    message += f"   Status: {status_color}\n"
+                    message += f"   Type: {service.service_type}\n"
+
+                    if health_check.response_time_ms:
+                        message += f"   Response: {health_check.response_time_ms}ms\n"
+
+                    if health_check.status_code:
+                        message += f"   HTTP: {health_check.status_code}\n"
+
+                    message += f"   Last check: {last_check}\n"
+
+                    if not health_check.is_healthy and health_check.error_message:
+                        error_preview = health_check.error_message[:60]
+                        if len(health_check.error_message) > 60:
+                            error_preview += "..."
+                        message += f"   Error: {error_preview}\n"
+                else:
+                    # No health check data yet
+                    message += f"[UNKNOWN] {service.name}\n"
+                    message += f"   Status: No health data yet\n"
+                    message += f"   Type: {service.service_type}\n"
+
+                message += "\n"
+
+        # Split message if too long (Telegram limit is 4096 chars)
+        if len(message) > 4000:
+            # Send first part
+            await update.message.reply_text(message[:4000] + "\n\n[continued...]")
+            # Send remaining
+            await update.message.reply_text(message[4000:])
+        else:
+            await update.message.reply_text(message)
+
+    except Exception as e:
+        log.error("status_handler_error", error=str(e))
+        await update.message.reply_text("Error fetching service status. Please try again.")
 
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
