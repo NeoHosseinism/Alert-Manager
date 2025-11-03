@@ -127,15 +127,14 @@ def run_migrations() -> None:
 
 async def initialize_database() -> None:
     """
-    Auto-initialize database from scratch if needed
+    Check database initialization
 
     This function:
     1. Checks if database exists
     2. Creates database if it doesn't exist
-    3. Runs Alembic migrations to create/update tables
-    4. Handles all edge cases gracefully
+    3. Verifies tables exist (expects migrations to be run separately)
 
-    This makes the app work out of the box without manual setup
+    Note: Run 'make migrate' or 'alembic upgrade head' before starting the app
     """
     log.info(
         "initializing_database",
@@ -155,16 +154,13 @@ async def initialize_database() -> None:
                 database=settings.database_name,
             )
             create_database_sync()
+            log.info("database_created", database=settings.database_name)
+            log.warning(
+                "migrations_needed",
+                message="Database created. Please run 'make migrate' or 'alembic upgrade head' to create tables.",
+            )
         else:
             log.info("database_found", database=settings.database_name)
-
-        # Step 3: Run migrations to ensure tables exist
-        log.info("ensuring_tables_exist")
-
-        # Run migrations in a thread executor to avoid event loop conflicts
-        # (Alembic uses asyncio.run() which can't be called from a running loop)
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, run_migrations)
 
         log.info(
             "database_initialization_complete",

@@ -8,7 +8,7 @@ install:  ## Install dependencies with Poetry
 	poetry install
 
 migrate:  ## Run database migrations (upgrade to latest)
-	poetry run alembic upgrade head
+	PYTHONPATH=src poetry run alembic upgrade head
 
 migrate-down:  ## Rollback last migration
 	poetry run alembic downgrade -1
