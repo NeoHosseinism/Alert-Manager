@@ -910,6 +910,133 @@ async def add_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Error creating user. Please try again.")
 
 
+async def edit_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /edit_user command - edit existing user (Super Admin only)"""
+    if not await auth_middleware(update, context):
+        return
+
+    user = context.user_data["db_user"]
+
+    if not user.is_super_admin:
+        await update.message.reply_text(
+            "[ACCESS DENIED]\n\n"
+            "This command requires super admin privileges."
+        )
+        return
+
+    # Parse arguments
+    if len(context.args) < 3:
+        await update.message.reply_text(
+            "[USAGE]\n\n"
+            "/edit_user <user_id> <field> <new_value>\n\n"
+            "Fields:\n"
+            "  • first_name - User's first name\n"
+            "  • last_name - User's last name\n"
+            "  • role - viewer, admin, super_admin\n"
+            "  • is_active - true, false\n\n"
+            "Examples:\n"
+            "/edit_user 5 first_name John\n"
+            "/edit_user 5 last_name Doe\n"
+            "/edit_user 5 role admin\n"
+            "/edit_user 5 is_active false"
+        )
+        return
+
+    try:
+        user_id = int(context.args[0])
+        field = context.args[1].lower()
+        new_value = " ".join(context.args[2:])  # Support multi-word names
+    except ValueError:
+        await update.message.reply_text(
+            "[INVALID INPUT]\n\n"
+            "User ID must be a number."
+        )
+        return
+
+    # Validate field
+    valid_fields = ["first_name", "last_name", "role", "is_active"]
+    if field not in valid_fields:
+        await update.message.reply_text(
+            f"[INVALID FIELD]\n\n"
+            f"Valid fields: {', '.join(valid_fields)}"
+        )
+        return
+
+    try:
+        async with get_session() as session:
+            user_repo = UserRepository(session)
+
+            # Get user
+            target_user = await user_repo.get_by_id(user_id)
+            if not target_user:
+                await update.message.reply_text(
+                    "[USER NOT FOUND]\n\n"
+                    f"No user found with ID: {user_id}\n\n"
+                    "Use /list_users to see all user IDs"
+                )
+                return
+
+            # Prepare update data
+            update_data = {}
+
+            if field == "first_name":
+                update_data["first_name"] = new_value
+            elif field == "last_name":
+                update_data["last_name"] = new_value
+            elif field == "role":
+                from models.user import UserRole
+                try:
+                    role_enum = UserRole(new_value)
+                    update_data["role"] = role_enum
+                except ValueError:
+                    await update.message.reply_text(
+                        "[INVALID ROLE]\n\n"
+                        "Valid roles: viewer, admin, super_admin"
+                    )
+                    return
+            elif field == "is_active":
+                if new_value.lower() in ["true", "1", "yes"]:
+                    update_data["is_active"] = True
+                elif new_value.lower() in ["false", "0", "no"]:
+                    update_data["is_active"] = False
+                else:
+                    await update.message.reply_text(
+                        "[INVALID VALUE]\n\n"
+                        "is_active must be: true, false, 1, 0, yes, or no"
+                    )
+                    return
+
+            # Update user
+            await user_repo.update(user_id, **update_data)
+            await session.commit()
+
+            # Get updated user
+            updated_user = await user_repo.get_by_id(user_id)
+
+        await update.message.reply_text(
+            "[USER UPDATED]\n\n"
+            f"User ID: {user_id}\n"
+            f"Phone: {updated_user.phone_number}\n"
+            f"Name: {updated_user.full_name}\n"
+            f"Role: {updated_user.role}\n"
+            f"Active: {updated_user.is_active}\n\n"
+            f"Updated field: {field}\n"
+            f"New value: {new_value if field != 'role' else updated_user.role}"
+        )
+
+        log.info(
+            "user_edited_via_bot",
+            admin_id=user.id,
+            target_user_id=user_id,
+            field=field,
+            new_value=new_value
+        )
+
+    except Exception as e:
+        log.error("edit_user_handler_error", error=str(e), exc_info=True)
+        await update.message.reply_text(f"Error updating user: {str(e)}")
+
+
 # OLD add_service_handler removed - Replaced with interactive conversation flow
 # See telegram_bot/service_config_conversation.py for the new implementation
 
@@ -1242,6 +1369,7 @@ def create_bot(environment: str) -> Application:
 
     # Super Admin commands
     application.add_handler(CommandHandler("add_user", add_user_handler))
+    application.add_handler(CommandHandler("edit_user", edit_user_handler))
 
     # Add service conversation handler (interactive flow)
     from telegram_bot.service_config_conversation import get_add_service_conversation_handler

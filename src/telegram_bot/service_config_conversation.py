@@ -24,6 +24,16 @@ from core.database import get_session
 
 log = get_logger(__name__)
 
+
+# Helper function for MarkdownV2 escaping
+def escape_markdown_v2(text: str) -> str:
+    """Escape special characters for Telegram MarkdownV2 format"""
+    chars_to_escape = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    for char in chars_to_escape:
+        text = text.replace(char, f'\\{char}')
+    return text
+
+
 # Conversation states
 (
     CHOOSE_SERVICE_TYPE,
@@ -87,13 +97,13 @@ async def choose_service_type(update: Update, context: ContextTypes.DEFAULT_TYPE
     if service_type == "health_check":
         # Simple flow for health check
         await query.edit_message_text(
-            "[SERVICE SETUP - Step 2/5]\n\n"
+            "*SERVICE SETUP \\- Step 2/5*\n\n"
             "Enter service details in this format:\n\n"
-            "`<name> <url> [interval_seconds]`\n\n"
+            "<name> <url> \\[interval\\_seconds\\]\n\n"
             "Example:\n"
-            "`MyAPI https://api.example.com/health 300`\n\n"
-            "Or type /cancel to cancel.",
-            parse_mode='Markdown'
+            "`MyAPI https://api\\.example\\.com/health 300`\n\n"
+            "Or type /cancel to cancel\\.",
+            parse_mode='MarkdownV2'
         )
         return ENTER_BASIC_INFO
 
@@ -152,14 +162,14 @@ async def choose_provider_mode(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # Custom provider flow
     await query.edit_message_text(
-        "[SERVICE SETUP - Step 3/5]\n\n"
-        "Let's configure your custom API provider.\n\n"
+        "*SERVICE SETUP \\- Step 3/5*\n\n"
+        "Let's configure your custom API provider\\.\n\n"
         "First, enter the service name and base URL:\n\n"
-        "`<service_name> <base_url>`\n\n"
+        "<service\\_name> <base\\_url>\n\n"
         "Example:\n"
-        "`MyAPI https://api.myprovider.com`\n\n"
-        "Or type /cancel to cancel.",
-        parse_mode='Markdown'
+        "`MyAPI https://api\\.myprovider\\.com`\n\n"
+        "Or type /cancel to cancel\\.",
+        parse_mode='MarkdownV2'
     )
 
     return CUSTOM_BASE_URL
@@ -187,17 +197,17 @@ async def select_provider(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     endpoints_info = "\n".join([f"  • {ep.name}: {ep.path}" for ep in provider.endpoints])
 
     await query.edit_message_text(
-        f"[SERVICE SETUP - Step 4/5]\n\n"
-        f"Provider: {provider.name}\n"
-        f"Default Base URL: {provider.base_url}\n"
-        f"Endpoints:\n{endpoints_info}\n\n"
+        f"*SERVICE SETUP \\- Step 4/5*\n\n"
+        f"Provider: {escape_markdown_v2(provider.name)}\n"
+        f"Default Base URL: {escape_markdown_v2(provider.base_url)}\n"
+        f"Endpoints:\n{escape_markdown_v2(endpoints_info)}\n\n"
         f"Enter service name and optional custom base URL:\n\n"
-        f"`<service_name> [custom_base_url]`\n\n"
+        f"<service\\_name> \\[custom\\_base\\_url\\]\n\n"
         f"Examples:\n"
-        f"`MyOpenRouter`  (uses default {provider.base_url})\n"
-        f"`MyCustom https://custom.openrouter.ai`\n\n"
-        f"Or type /cancel to cancel.",
-        parse_mode='Markdown'
+        f"`MyOpenRouter`  \\(uses default {escape_markdown_v2(provider.base_url)}\\)\n"
+        f"`MyCustom https://custom\\.openrouter\\.ai`\n\n"
+        f"Or type /cancel to cancel\\.",
+        parse_mode='MarkdownV2'
     )
 
     return ENTER_BASIC_INFO
@@ -218,10 +228,10 @@ async def handle_basic_info(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if service_type == "health_check":
         if len(parts) < 2:
             await update.message.reply_text(
-                "[INVALID INPUT]\n\n"
-                "Please provide at least name and URL.\n\n"
-                "Format: `<name> <url> [interval_seconds]`",
-                parse_mode='Markdown'
+                "*INVALID INPUT*\n\n"
+                "Please provide at least name and URL\\.\n\n"
+                "Format: <name> <url> \\[interval\\_seconds\\]",
+                parse_mode='MarkdownV2'
             )
             return ENTER_BASIC_INFO
 
@@ -297,7 +307,7 @@ async def handle_endpoint_count(update: Update, context: ContextTypes.DEFAULT_TY
 
     # Start configuring first endpoint
     await update.message.reply_text(
-        f"[SERVICE SETUP - Endpoint 1/{count}]\n\n"
+        f"*SERVICE SETUP \\- Endpoint 1/{count}*\n\n"
         f"Configure endpoint 1:\n\n"
         f"Enter endpoint details in JSON format:\n\n"
         f"```json\n"
@@ -307,8 +317,8 @@ async def handle_endpoint_count(update: Update, context: ContextTypes.DEFAULT_TY
         f'  "method": "GET"\n'
         f"}}\n"
         f"```\n\n"
-        f"Or type /cancel to cancel.",
-        parse_mode='Markdown'
+        f"Or type /cancel to cancel\\.",
+        parse_mode='MarkdownV2'
     )
 
     return CUSTOM_ENDPOINT_CONFIG
@@ -340,8 +350,8 @@ async def handle_endpoint_config(update: Update, context: ContextTypes.DEFAULT_T
         if current < total:
             # Configure next endpoint
             await update.message.reply_text(
-                f"[SERVICE SETUP - Endpoint {current + 1}/{total}]\n\n"
-                f"Configure endpoint {current + 1}:\n\n"
+                f"*SERVICE SETUP \\- Endpoint {current \\+ 1}/{total}*\n\n"
+                f"Configure endpoint {current \\+ 1}:\n\n"
                 f"Enter endpoint details in JSON format:\n\n"
                 f"```json\n"
                 f"{{\n"
@@ -350,8 +360,8 @@ async def handle_endpoint_config(update: Update, context: ContextTypes.DEFAULT_T
                 f'  "method": "GET"\n'
                 f"}}\n"
                 f"```\n\n"
-                f"Or type /cancel to cancel.",
-                parse_mode='Markdown'
+                f"Or type /cancel to cancel\\.",
+                parse_mode='MarkdownV2'
             )
             return CUSTOM_ENDPOINT_CONFIG
 
@@ -395,8 +405,9 @@ async def handle_field_mapping(update: Update, context: ContextTypes.DEFAULT_TYP
     if text == "yes" and service_config.get("current_mapping_endpoint") == 0:
         # Start mapping first endpoint
         endpoint = service_config["endpoints"][0]
+        metrics_list = escape_markdown_v2("\n".join([f"  • {key}" for key in list(STANDARD_METRICS.keys())[:10]]))
         await update.message.reply_text(
-            f"[FIELD MAPPING - Endpoint: {endpoint['name']}]\n\n"
+            f"*FIELD MAPPING \\- Endpoint: {escape_markdown_v2(endpoint['name'])}*\n\n"
             f"Enter field mappings in JSON format:\n\n"
             f"```json\n"
             f"{{\n"
@@ -405,11 +416,10 @@ async def handle_field_mapping(update: Update, context: ContextTypes.DEFAULT_TYP
             f'  "used": "total_usage"\n'
             f"}}\n"
             f"```\n\n"
-            f"Map your API's field names (left) to standard metrics (right).\n\n"
-            f"Available standard metrics:\n" +
-            "\n".join([f"  • {key}" for key in list(STANDARD_METRICS.keys())[:10]]) +
-            "\n\nOr type /cancel:",
-            parse_mode='Markdown'
+            f"Map your API's field names \\(left\\) to standard metrics \\(right\\)\\.\n\n"
+            f"Available standard metrics:\n{metrics_list}"
+            f"\n\nOr type /cancel:",
+            parse_mode='MarkdownV2'
         )
         return CUSTOM_FIELD_MAPPING
 
@@ -431,9 +441,9 @@ async def handle_field_mapping(update: Update, context: ContextTypes.DEFAULT_TYP
             # Map next endpoint
             next_endpoint = service_config["endpoints"][service_config["current_mapping_endpoint"]]
             await update.message.reply_text(
-                f"[FIELD MAPPING - Endpoint: {next_endpoint['name']}]\n\n"
+                f"*FIELD MAPPING \\- Endpoint: {escape_markdown_v2(next_endpoint['name'])}*\n\n"
                 f"Enter field mappings for the next endpoint in JSON format or type /cancel:",
-                parse_mode='Markdown'
+                parse_mode='MarkdownV2'
             )
             return CUSTOM_FIELD_MAPPING
 
@@ -565,15 +575,15 @@ async def confirm_config(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await session.commit()
 
         await query.edit_message_text(
-            "[SERVICE CREATED]\n\n"
-            f"Service: {new_service.name}\n"
+            "*SERVICE CREATED*\n\n"
+            f"Service: {escape_markdown_v2(new_service.name)}\n"
             f"ID: {new_service.id}\n"
             f"Type: API Credit Tracking\n\n"
             f"Next steps:\n"
-            f"1. Set API key: `/set_api_key {new_service.id} <key>`\n"
-            f"2. Assign users: `/assign <user_id> {new_service.id}`\n"
-            f"3. Edit if needed: `/edit_service {new_service.id}`",
-            parse_mode='Markdown'
+            f"1\\. Set API key: `/set_api_key {new_service.id} <key>`\n"
+            f"2\\. Assign users: `/assign <user_id> {new_service.id}`\n"
+            f"3\\. Edit if needed: `/edit_service {new_service.id}`",
+            parse_mode='MarkdownV2'
         )
 
         log.info(
@@ -615,14 +625,14 @@ async def create_health_check_service(update: Update, context: ContextTypes.DEFA
             await session.commit()
 
         await update.message.reply_text(
-            "[SERVICE CREATED]\n\n"
-            f"Service: {new_service.name}\n"
+            "*SERVICE CREATED*\n\n"
+            f"Service: {escape_markdown_v2(new_service.name)}\n"
             f"ID: {new_service.id}\n"
             f"Type: Health Check\n"
-            f"URL: {service_config['url']}\n"
+            f"URL: {escape_markdown_v2(service_config['url'])}\n"
             f"Interval: {service_config['interval']}s\n\n"
             f"Next step: `/assign <user_id> {new_service.id}`",
-            parse_mode='Markdown'
+            parse_mode='MarkdownV2'
         )
 
         log.info(
@@ -663,4 +673,5 @@ def get_add_service_conversation_handler() -> ConversationHandler:
             CONFIRM_CONFIG: [CallbackQueryHandler(confirm_config)],
         },
         fallbacks=[CommandHandler("cancel", cancel_conversation)],
+        per_message=True,  # Fix PTBUserWarning: properly track CallbackQueryHandler per message
     )
