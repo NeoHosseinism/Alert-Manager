@@ -13,7 +13,7 @@ from config import settings
 from config.logging import configure_logging, get_logger
 from core.database import init_database, close_database
 from core.db_init import initialize_database
-from telegram.bot import create_bot, start_bot, stop_bot
+from telegram_bot.bot import create_bot, start_bot, stop_bot
 from monitoring.health_checker import HealthChecker
 from monitoring.credit_monitor import CreditMonitor
 
