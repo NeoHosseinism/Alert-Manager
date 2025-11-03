@@ -23,36 +23,25 @@ migrate-create:  ## Create new migration (use: make migrate-create MSG="descript
 add-user:  ## Add a new user (use: make add-user PHONE=+1234567890 ROLE=admin NAME="John")
 	@if [ -z "$(PHONE)" ]; then \
 		echo "Error: PHONE is required."; \
+		echo ""; \
 		echo "Usage: make add-user PHONE=+1234567890 ROLE=admin NAME='John Doe'"; \
 		echo ""; \
 		echo "Parameters:"; \
-		echo "  PHONE (required) - Phone number in E.164 format (e.g., +1234567890)"; \
-		echo "  ROLE  (optional) - User role: viewer, admin, super_admin (default: admin)"; \
+		echo "  PHONE (required) - Phone number in E.164 format (e.g., +989123456789)"; \
+		echo "  ROLE  (optional) - User role (default: admin)"; \
+		echo "                     Options: viewer | admin | super_admin"; \
+		echo "                     - viewer: Can view alerts only"; \
+		echo "                     - admin: Can manage services and alerts"; \
+		echo "                     - super_admin: Full system access"; \
 		echo "  NAME  (optional) - User's full name (default: User)"; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  make add-user PHONE=+989123456789 ROLE=super_admin NAME='Ali Rezaei'"; \
+		echo "  make add-user PHONE=+989123456789 ROLE=admin"; \
+		echo "  make add-user PHONE=+989123456789"; \
 		exit 1; \
 	fi
-	@PYTHONPATH=src poetry run python -c "\
-import asyncio; \
-from core.database import init_database, get_session; \
-from repositories.user_repository import UserRepository; \
-from models.user import UserRole; \
-from config.logging import configure_logging; \
-from config import settings; \
-configure_logging(settings.environment, settings.log_level); \
-async def add(): \
-    await init_database(); \
-    async with get_session() as session: \
-        repo = UserRepository(session); \
-        phone = '$(PHONE)'; \
-        role = '$(ROLE)' if '$(ROLE)' else 'admin'; \
-        name = '$(NAME)' if '$(NAME)' else 'User'; \
-        user = await repo.create_user(phone_number=phone, role=UserRole(role), full_name=name); \
-        print(f'\n✅ User created successfully!'); \
-        print(f'   Phone: {user.phone_number}'); \
-        print(f'   Role: {user.role}'); \
-        print(f'   Name: {user.full_name}'); \
-        print(f'\nYou can now message the bot at @$(shell grep TELEGRAM_SANDBOX_BOT_USERNAME .env | cut -d= -f2)'); \
-asyncio.run(add())"
+	@PYTHONPATH=src poetry run python scripts/add_user.py "$(PHONE)" "$(if $(ROLE),$(ROLE),admin)" "$(if $(NAME),$(NAME),User)"
 
 dev:  ## Run application in development mode
 	ENVIRONMENT=dev PYTHONPATH=src poetry run python -m main
