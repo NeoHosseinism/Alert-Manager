@@ -55,7 +55,7 @@ class Service(Base, TimestampMixin):
     retry_delay_seconds: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     environment: Mapped[str] = mapped_column(String(20), default="prod", nullable=False)
-    metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    service_metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
     # Relationships
     permissions: Mapped[List["UserServicePermission"]] = relationship(
