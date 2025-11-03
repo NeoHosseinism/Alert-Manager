@@ -1,4 +1,4 @@
-.PHONY: help install migrate migrate-down migrate-create dev test docker-build docker-run docker-compose-up docker-compose-down bootstrap clean lint format
+.PHONY: help install migrate migrate-down migrate-create dev test docker-build docker-run docker-compose-up docker-compose-down clean
 
 help:  ## Show this help message
 	@echo "Available commands:"
@@ -26,12 +26,6 @@ dev:  ## Run application in development mode
 test:  ## Run tests with coverage
 	poetry run pytest tests/ -v --cov=alert_manager --cov-report=html --cov-report=term-missing
 
-lint:  ## Run linting with ruff
-	poetry run ruff check src/
-
-format:  ## Format code with black
-	poetry run black src/ tests/
-
 docker-build:  ## Build Docker image
 	docker build -t alert-manager:latest .
 
@@ -46,9 +40,6 @@ docker-compose-down:  ## Stop docker-compose services
 
 docker-compose-logs:  ## View docker-compose logs
 	docker-compose logs -f
-
-bootstrap:  ## Bootstrap database with initial data
-	poetry run python scripts/bootstrap.py
 
 clean:  ## Clean up cache and build files
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true

@@ -76,3 +76,6 @@ reports/
 secrets/
 *.key
 *.pem
+
+# Ignore specific files
+note.txt
