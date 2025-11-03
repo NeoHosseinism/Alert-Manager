@@ -54,7 +54,6 @@ class Settings(BaseSettings):
     alert_critical_batch_count: int = Field(default=5, description="Flush critical alerts after N")
 
     # Credit Monitoring
-    openrouter_api_url: str = Field(default="https://openrouter.ai/api/v1")
     default_credit_threshold: float = Field(default=20.00)
     default_credit_check_interval: int = Field(default=24, description="Hours")
 

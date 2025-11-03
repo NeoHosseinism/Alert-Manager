@@ -936,11 +936,12 @@ async def add_service_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             "  • interval - Check interval in seconds (default: 300)\n\n"
             "*Examples:*\n"
             "`/add_service MyAPI health_check https://api.example.com/health`\n"
-            "`/add_service OpenRouter-Personal api_credit https://openrouter.ai 3600`\n"
-            "`/add_service OpenRouter-Work api_credit https://openrouter.ai 3600`\n\n"
+            "`/add_service Provider1 api_credit https://api.provider.com 3600`\n"
+            "`/add_service Provider2 api_credit https://api.provider.com 3600`\n\n"
             "*Multi-API Key Support:*\n"
             "Create multiple services with different names for the same URL.\n"
-            "Each can have its own API key via `/set_api_key`",
+            "Each can have its own API key via `/set_api_key`\n"
+            "Configure tracking methods via `/set_tracking`",
             parse_mode='Markdown'
         )
         return
@@ -997,8 +998,14 @@ async def add_service_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 service_params["timeout_seconds"] = 10
             elif service_type == "api_credit":
                 service_params["endpoint_url"] = url
-                service_params["api_provider"] = "openrouter" if "openrouter" in url.lower() else "custom"
+                service_params["api_provider"] = "custom"
                 service_params["credit_check_interval_hours"] = check_interval // 3600 if check_interval >= 3600 else 1
+                # Set default tracking config - both methods enabled
+                service_params["api_tracking_config"] = {
+                    "methods": ["key_management", "credits"],
+                    "key_management_path": "/api/v1/key",
+                    "credits_path": "/api/v1/credits"
+                }
 
             # Create new service
             new_service = await service_repo.create(**service_params)
@@ -1018,12 +1025,16 @@ async def add_service_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         if service_type == "health_check":
             response += f"Expected Status: 200\nTimeout: 10s\n\n"
         elif service_type == "api_credit":
-            provider = service_params["api_provider"]
-            response += f"Provider: {provider}\n\n"
-            if provider == "openrouter":
-                response += "Note: Configure API key with `/set_api_key {new_service.id} <your-key>`\n\n"
+            response += (
+                "Tracking: key_management + credits APIs\n\n"
+                f"Next steps:\n"
+                f"1. Set API key: `/set_api_key {new_service.id} <your-key>`\n"
+                f"2. Customize tracking: `/set_tracking {new_service.id}` (optional)\n"
+                f"3. Assign users: `/assign <user_id> {new_service.id}`\n"
+            )
 
-        response += f"Use `/assign <user_id> {new_service.id}` to give users access."
+        if service_type == "health_check":
+            response += f"Use `/assign <user_id> {new_service.id}` to give users access."
 
         await update.message.reply_text(response, parse_mode='Markdown')
 
@@ -1144,6 +1155,127 @@ async def set_api_key_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(f"Error setting API key: {str(e)}")
 
 
+async def set_tracking_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /set_tracking command - configure API tracking methods (Super Admin only)"""
+    if not await auth_middleware(update, context):
+        return
+
+    user = context.user_data["db_user"]
+
+    if not user.is_super_admin:
+        await update.message.reply_text(
+            "[ACCESS DENIED]\n\n"
+            "This command requires super admin privileges."
+        )
+        return
+
+    # Parse arguments
+    if len(context.args) < 1:
+        await update.message.reply_text(
+            "[USAGE]\n\n"
+            "/set_tracking <service_id> [methods] [key_path] [credits_path]\n\n"
+            "*Methods:* Comma-separated list (default: key_management,credits)\n"
+            "  • key_management - Detailed usage tracking\n"
+            "  • credits - Simple balance tracking\n\n"
+            "*Paths:* API endpoint paths (optional)\n"
+            "  • key_path - Default: /api/v1/key\n"
+            "  • credits_path - Default: /api/v1/credits\n\n"
+            "*Examples:*\n"
+            "`/set_tracking 1`  (use defaults)\n"
+            "`/set_tracking 1 key_management`\n"
+            "`/set_tracking 1 credits`\n"
+            "`/set_tracking 1 key_management,credits /v1/key /v1/credits`",
+            parse_mode='Markdown'
+        )
+        return
+
+    try:
+        service_id = int(context.args[0])
+
+        # Parse methods (default: both)
+        methods_str = context.args[1] if len(context.args) > 1 else "key_management,credits"
+        methods = [m.strip() for m in methods_str.split(",")]
+
+        # Validate methods
+        valid_methods = ["key_management", "credits"]
+        for method in methods:
+            if method not in valid_methods:
+                await update.message.reply_text(
+                    f"[INVALID METHOD]\n\n"
+                    f"'{method}' is not a valid tracking method.\n"
+                    f"Valid methods: {', '.join(valid_methods)}"
+                )
+                return
+
+        # Parse paths (optional)
+        key_path = context.args[2] if len(context.args) > 2 else "/api/v1/key"
+        credits_path = context.args[3] if len(context.args) > 3 else "/api/v1/credits"
+
+    except ValueError:
+        await update.message.reply_text(
+            "[INVALID INPUT]\n\n"
+            "Service ID must be a number."
+        )
+        return
+
+    try:
+        from config import settings
+        async with get_session() as session:
+            from repositories.service_repository import ServiceRepository
+            service_repo = ServiceRepository(session)
+
+            # Get service
+            service = await service_repo.get_by_id(service_id)
+            if not service:
+                await update.message.reply_text(
+                    "[SERVICE NOT FOUND]\n\n"
+                    f"No service found with ID: {service_id}\n\n"
+                    "Use `/services` to see all service IDs",
+                    parse_mode='Markdown'
+                )
+                return
+
+            # Verify it's an API credit service
+            if service.service_type != "api_credit":
+                await update.message.reply_text(
+                    "[INVALID SERVICE TYPE]\n\n"
+                    f"Service '{service.name}' is a {service.service_type} service.\n"
+                    "Tracking can only be configured for api_credit services."
+                )
+                return
+
+            # Build tracking config
+            tracking_config = {
+                "methods": methods,
+                "key_management_path": key_path,
+                "credits_path": credits_path
+            }
+
+            # Update service
+            await service_repo.update(service_id, api_tracking_config=tracking_config)
+            await session.commit()
+
+        await update.message.reply_text(
+            "[TRACKING CONFIGURED]\n\n"
+            f"Service: {service.name} (ID: {service_id})\n"
+            f"Methods: {', '.join(methods)}\n"
+            f"Key endpoint: {service.endpoint_url}{key_path}\n"
+            f"Credits endpoint: {service.endpoint_url}{credits_path}\n\n"
+            "Tracking configuration updated successfully."
+        )
+
+        log.info(
+            "tracking_configured",
+            admin_id=user.id,
+            service_id=service_id,
+            methods=methods
+        )
+
+    except Exception as e:
+        log.error("set_tracking_handler_error", error=str(e))
+        await update.message.reply_text(f"Error configuring tracking: {str(e)}")
+
+
 async def list_users_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /list_users command - list all users (Super Admin only)"""
     if not await auth_middleware(update, context):
@@ -1255,6 +1387,7 @@ def create_bot(environment: str) -> Application:
     application.add_handler(CommandHandler("add_user", add_user_handler))
     application.add_handler(CommandHandler("add_service", add_service_handler))
     application.add_handler(CommandHandler("set_api_key", set_api_key_handler))
+    application.add_handler(CommandHandler("set_tracking", set_tracking_handler))
     application.add_handler(CommandHandler("list_users", list_users_handler))
 
     log.info("telegram_bot_created", bot_username=bot_name, handlers=len(application.handlers))

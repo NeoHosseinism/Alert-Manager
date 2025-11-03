@@ -50,6 +50,14 @@ class Service(Base, TimestampMixin):
     credit_threshold: Mapped[Optional[float]] = mapped_column(DECIMAL(10, 2), nullable=True)
     credit_check_interval_hours: Mapped[int] = mapped_column(Integer, default=24, nullable=False)
 
+    # API Tracking Configuration
+    # JSON structure: {
+    #   "methods": ["key_management", "credits"],  # Which tracking methods to use
+    #   "key_management_path": "/api/v1/key",     # Path for detailed usage API
+    #   "credits_path": "/api/v1/credits"          # Path for simple credits API
+    # }
+    api_tracking_config: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+
     # Common settings
     check_interval_seconds: Mapped[int] = mapped_column(Integer, default=300, nullable=False)
     max_retries: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
