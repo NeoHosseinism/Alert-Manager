@@ -206,7 +206,9 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await user_repo.update(
                 user.id,
                 telegram_user_id=telegram_user.id,
-                telegram_username=telegram_user.username
+                telegram_username=telegram_user.username,
+                first_name=telegram_user.first_name,
+                last_name=telegram_user.last_name
             )
 
             await update.message.reply_text(
@@ -976,6 +978,7 @@ async def list_users_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
             message += (
                 f"[{status}] {u.role}\n"
+                f"Name: {u.full_name}\n"
                 f"Phone: {u.phone_number}\n"
                 f"Telegram: {telegram}\n"
                 f"ID: {u.id}\n\n"
@@ -993,6 +996,7 @@ async def list_users_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 telegram = f"@{u.telegram_username}" if u.telegram_username else "Not linked"
                 message += (
                     f"[{status}] {u.role}\n"
+                    f"Name: {u.full_name}\n"
                     f"Phone: {u.phone_number}\n"
                     f"Telegram: {telegram}\n"
                     f"ID: {u.id}\n\n"

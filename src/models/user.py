@@ -27,6 +27,8 @@ class User(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     phone_number: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
+    first_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    last_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     telegram_user_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, unique=True, nullable=True, index=True
     )
@@ -43,6 +45,17 @@ class User(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, phone={self.phone_number}, role={self.role})>"
+
+    @property
+    def full_name(self) -> str:
+        """Get full name from first and last name"""
+        if self.first_name and self.last_name:
+            return f"{self.first_name} {self.last_name}"
+        elif self.first_name:
+            return self.first_name
+        elif self.last_name:
+            return self.last_name
+        return "Unknown"
 
     @property
     def is_admin(self) -> bool:
