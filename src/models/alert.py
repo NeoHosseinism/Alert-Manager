@@ -92,7 +92,8 @@ class MutedService(Base, TimestampMixin):
             "user_id",
             "service_id",
             "muted_until",
-            postgresql_where="muted_until > NOW()",
+            # Note: Removed postgresql_where with NOW() as it's not IMMUTABLE
+            # Regular index still provides good query performance
         ),
     )
 
