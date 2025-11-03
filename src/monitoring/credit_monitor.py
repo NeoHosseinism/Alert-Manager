@@ -1,9 +1,12 @@
 """
-API credit monitoring with support for OpenRouter and extensible for other providers
+Flexible API credit monitoring with provider-agnostic configuration
+
+Supports both pre-defined providers (OpenRouter, etc.) and custom providers
+with configurable endpoints and field mappings.
 """
 import asyncio
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any, List
 
 import httpx
 from config import settings
@@ -18,7 +21,7 @@ log = get_logger(__name__)
 
 @dataclass
 class CreditCheckResult:
-    """Result of a credit check with support for multiple tracking methods"""
+    """Result of a credit check with flexible metric storage"""
 
     # Status
     success: bool = True
@@ -26,65 +29,53 @@ class CreditCheckResult:
     below_threshold: bool = False
     threshold: Optional[float] = None
 
-    # Method 1: Key Management API - Detailed Usage Tracking
-    key_label: Optional[str] = None
-    limit: Optional[float] = None
-    limit_reset: Optional[str] = None
-    limit_remaining: Optional[float] = None
-    include_byok_in_limit: Optional[bool] = None
+    # Flexible metrics storage - populated via field mappings
+    metrics: Dict[str, Any] = field(default_factory=dict)
 
-    # Usage stats (all time, daily, weekly, monthly)
-    usage: Optional[float] = None
-    usage_daily: Optional[float] = None
-    usage_weekly: Optional[float] = None
-    usage_monthly: Optional[float] = None
-
-    # BYOK (Bring Your Own Key) usage stats
-    byok_usage: Optional[float] = None
-    byok_usage_daily: Optional[float] = None
-    byok_usage_weekly: Optional[float] = None
-    byok_usage_monthly: Optional[float] = None
-
-    is_free_tier: Optional[bool] = None
-
-    # Method 2: Credits API - Simple Balance Tracking
-    total_credits: Optional[float] = None
-    total_usage: Optional[float] = None
-
-    # Computed fields
     @property
     def remaining_credit(self) -> Optional[float]:
-        """Get remaining credit from available data sources"""
-        # Priority: limit_remaining > total_credits - total_usage > limit - usage
-        if self.limit_remaining is not None:
-            return self.limit_remaining
-        if self.total_credits is not None and self.total_usage is not None:
-            return self.total_credits - self.total_usage
-        if self.limit is not None and self.usage is not None:
-            return self.limit - self.usage
-        return None
+        """Get remaining credit from mapped metrics"""
+        return self.metrics.get("remaining_credit")
 
     @property
-    def total_limit(self) -> Optional[float]:
-        """Get total limit from available data sources"""
-        return self.total_credits or self.limit
+    def total_credit(self) -> Optional[float]:
+        """Get total credit from mapped metrics"""
+        return self.metrics.get("total_credit")
+
+    @property
+    def total_usage(self) -> Optional[float]:
+        """Get total usage from mapped metrics"""
+        return self.metrics.get("total_usage")
+
+    # Convenience accessors for common metrics
+    @property
+    def usage_daily(self) -> Optional[float]:
+        return self.metrics.get("usage_daily")
+
+    @property
+    def usage_weekly(self) -> Optional[float]:
+        return self.metrics.get("usage_weekly")
+
+    @property
+    def usage_monthly(self) -> Optional[float]:
+        return self.metrics.get("usage_monthly")
 
 
 class CreditMonitor:
-    """API credit monitor"""
+    """Flexible API credit monitor with provider-agnostic configuration"""
 
     def __init__(self):
         self.log = log
 
     async def check_service(self, service: Service) -> CreditCheckResult:
         """
-        Check API credit for a service using configured tracking methods
+        Check API credit for a service using its configuration
 
         Args:
-            service: Service to check
+            service: Service with api_tracking_config
 
         Returns:
-            Credit check result with data from all configured methods
+            Credit check result with mapped metrics
         """
         try:
             # Validate configuration
@@ -95,34 +86,28 @@ class CreditMonitor:
                 return CreditCheckResult(success=False, error="No API key configured")
 
             # Get tracking configuration
-            tracking_config = service.api_tracking_config or {}
-            methods = tracking_config.get("methods", [])
+            tracking_config = service.api_tracking_config
+            if not tracking_config:
+                return CreditCheckResult(success=False, error="No tracking configuration")
 
-            if not methods:
-                self.log.warning("no_tracking_methods", service=service.name)
-                return CreditCheckResult(success=False, error="No tracking methods configured")
+            endpoints = tracking_config.get("endpoints", [])
+            if not endpoints:
+                return CreditCheckResult(success=False, error="No endpoints configured")
 
-            # Check all configured methods
+            # Check all configured endpoints
             results = []
             errors = []
 
-            if "key_management" in methods:
-                result = await self._check_key_management_api(service, tracking_config)
+            for endpoint_config in endpoints:
+                result = await self._check_endpoint(service, endpoint_config)
                 if result.success:
                     results.append(result)
                 else:
-                    errors.append(f"Key management: {result.error}")
-
-            if "credits" in methods:
-                result = await self._check_credits_api(service, tracking_config)
-                if result.success:
-                    results.append(result)
-                else:
-                    errors.append(f"Credits: {result.error}")
+                    errors.append(f"{endpoint_config.get('name', 'unknown')}: {result.error}")
 
             # Merge results
             if not results:
-                error_msg = "; ".join(errors) if errors else "All tracking methods failed"
+                error_msg = "; ".join(errors) if errors else "All endpoints failed"
                 return CreditCheckResult(success=False, error=error_msg)
 
             merged_result = self._merge_results(results, service.credit_threshold)
@@ -133,7 +118,7 @@ class CreditMonitor:
                     service=service.name,
                     remaining=merged_result.remaining_credit,
                     below_threshold=merged_result.below_threshold,
-                    methods=methods,
+                    endpoint_count=len(endpoints),
                 )
             else:
                 self.log.error("credit_check_failed", service=service.name, error=merged_result.error)
@@ -144,133 +129,89 @@ class CreditMonitor:
             self.log.error("credit_check_exception", service=service.name, error=str(e))
             return CreditCheckResult(success=False, error=str(e))
 
-    async def _check_key_management_api(
-        self, service: Service, tracking_config: dict
-    ) -> CreditCheckResult:
+    async def _check_endpoint(self, service: Service, endpoint_config: dict) -> CreditCheckResult:
         """
-        Check API using key management endpoint for detailed usage tracking
-
-        Expected API response format:
-        {
-          "data": {
-            "label": "string",
-            "limit": float | null,
-            "limit_reset": "string" | null,
-            "limit_remaining": float | null,
-            "include_byok_in_limit": bool,
-            "usage": float,
-            "usage_daily": float,
-            "usage_weekly": float,
-            "usage_monthly": float,
-            "byok_usage": float,
-            "byok_usage_daily": float,
-            "byok_usage_weekly": float,
-            "byok_usage_monthly": float,
-            "is_free_tier": bool
-          }
-        }
+        Check a single API endpoint and apply field mappings
 
         Args:
             service: Service configuration
-            tracking_config: Tracking configuration dict
+            endpoint_config: Endpoint configuration dict containing:
+                - name: str
+                - path: str
+                - method: str (GET, POST, etc.)
+                - headers_template: dict (optional)
+                - request_body: dict (optional)
+                - response_data_path: list[str] (optional)
+                - field_mappings: dict mapping external -> internal names
 
         Returns:
-            Credit check result with detailed usage data
+            Credit check result with mapped metrics
         """
         try:
             # Decrypt API key
             api_key = decrypt_api_key(service.api_key_encrypted)
 
             # Build URL
-            path = tracking_config.get("key_management_path", "/api/v1/key")
-            url = service.endpoint_url.rstrip("/") + path
+            base_url = service.endpoint_url.rstrip("/")
+            path = endpoint_config.get("path", "")
+            url = f"{base_url}{path}"
+
+            # Build headers
+            headers_template = endpoint_config.get("headers_template", {})
+            headers = {}
+            for key, value_template in headers_template.items():
+                # Replace {api_key} placeholder
+                value = value_template.replace("{api_key}", api_key)
+                headers[key] = value
+
+            # Get request parameters
+            method = endpoint_config.get("method", "GET").upper()
+            request_body = endpoint_config.get("request_body")
 
             # Make request
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    url,
-                    headers={"Authorization": f"Bearer {api_key}"},
-                )
+                if method == "GET":
+                    response = await client.get(url, headers=headers)
+                elif method == "POST":
+                    response = await client.post(url, headers=headers, json=request_body)
+                else:
+                    return CreditCheckResult(success=False, error=f"Unsupported method: {method}")
+
                 response.raise_for_status()
                 data = response.json()
 
-            # Parse response
-            api_data = data.get("data", {})
+            # Navigate to data location in response
+            response_data_path = endpoint_config.get("response_data_path", [])
+            current_data = data
+            for path_segment in response_data_path:
+                current_data = current_data.get(path_segment, {})
+
+            # Apply field mappings
+            field_mappings = endpoint_config.get("field_mappings", {})
+            mapped_metrics = {}
+
+            for external_field, internal_metric in field_mappings.items():
+                if external_field in current_data:
+                    value = current_data[external_field]
+                    # Convert to appropriate type
+                    if value is not None:
+                        # Try to convert to float for numeric fields
+                        try:
+                            if isinstance(value, (int, float)):
+                                mapped_metrics[internal_metric] = float(value)
+                            elif isinstance(value, str):
+                                # Keep as string (for label, etc.)
+                                mapped_metrics[internal_metric] = value
+                            elif isinstance(value, bool):
+                                mapped_metrics[internal_metric] = value
+                            else:
+                                mapped_metrics[internal_metric] = value
+                        except (ValueError, TypeError):
+                            mapped_metrics[internal_metric] = value
 
             return CreditCheckResult(
                 success=True,
-                key_label=api_data.get("label"),
-                limit=float(api_data["limit"]) if api_data.get("limit") is not None else None,
-                limit_reset=api_data.get("limit_reset"),
-                limit_remaining=(
-                    float(api_data["limit_remaining"])
-                    if api_data.get("limit_remaining") is not None
-                    else None
-                ),
-                include_byok_in_limit=api_data.get("include_byok_in_limit"),
-                usage=float(api_data.get("usage", 0)),
-                usage_daily=float(api_data.get("usage_daily", 0)),
-                usage_weekly=float(api_data.get("usage_weekly", 0)),
-                usage_monthly=float(api_data.get("usage_monthly", 0)),
-                byok_usage=float(api_data.get("byok_usage", 0)),
-                byok_usage_daily=float(api_data.get("byok_usage_daily", 0)),
-                byok_usage_weekly=float(api_data.get("byok_usage_weekly", 0)),
-                byok_usage_monthly=float(api_data.get("byok_usage_monthly", 0)),
-                is_free_tier=api_data.get("is_free_tier"),
-            )
-
-        except httpx.HTTPStatusError as e:
-            return CreditCheckResult(success=False, error=f"HTTP {e.response.status_code}")
-        except httpx.TimeoutException:
-            return CreditCheckResult(success=False, error="Request timeout")
-        except (KeyError, ValueError, TypeError) as e:
-            return CreditCheckResult(success=False, error=f"Invalid response format: {e}")
-        except Exception as e:
-            return CreditCheckResult(success=False, error=str(e))
-
-    async def _check_credits_api(self, service: Service, tracking_config: dict) -> CreditCheckResult:
-        """
-        Check API using credits endpoint for simple balance tracking
-
-        Expected API response format:
-        {
-          "data": {
-            "total_credits": float,
-            "total_usage": float
-          }
-        }
-
-        Args:
-            service: Service configuration
-            tracking_config: Tracking configuration dict
-
-        Returns:
-            Credit check result with balance data
-        """
-        try:
-            # Decrypt API key
-            api_key = decrypt_api_key(service.api_key_encrypted)
-
-            # Build URL
-            path = tracking_config.get("credits_path", "/api/v1/credits")
-            url = service.endpoint_url.rstrip("/") + path
-
-            # Make request
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    url,
-                    headers={"Authorization": f"Bearer {api_key}"},
-                )
-                response.raise_for_status()
-                data = response.json()
-
-            # Parse response
-            api_data = data.get("data", {})
-
-            return CreditCheckResult(
-                success=True,
-                total_credits=float(api_data.get("total_credits", 0)),
-                total_usage=float(api_data.get("total_usage", 0)),
+                metrics=mapped_metrics
             )
 
         except httpx.HTTPStatusError as e:
@@ -283,47 +224,33 @@ class CreditMonitor:
             return CreditCheckResult(success=False, error=str(e))
 
     def _merge_results(
-        self, results: list[CreditCheckResult], threshold: Optional[float]
+        self, results: List[CreditCheckResult], threshold: Optional[float]
     ) -> CreditCheckResult:
         """
-        Merge results from multiple tracking methods
+        Merge results from multiple endpoints
 
         Args:
-            results: List of credit check results
+            results: List of credit check results from different endpoints
             threshold: Credit threshold for alerting
 
         Returns:
             Merged credit check result
         """
-        # Start with empty result
-        merged = CreditCheckResult(success=True)
+        # Merge all metrics from all results
+        merged_metrics = {}
 
-        # Merge all non-None fields from all results
         for result in results:
-            for field in [
-                "key_label",
-                "limit",
-                "limit_reset",
-                "limit_remaining",
-                "include_byok_in_limit",
-                "usage",
-                "usage_daily",
-                "usage_weekly",
-                "usage_monthly",
-                "byok_usage",
-                "byok_usage_daily",
-                "byok_usage_weekly",
-                "byok_usage_monthly",
-                "is_free_tier",
-                "total_credits",
-                "total_usage",
-            ]:
-                value = getattr(result, field, None)
+            for metric_name, value in result.metrics.items():
                 if value is not None:
-                    setattr(merged, field, value)
+                    # Last value wins (could implement more sophisticated merging)
+                    merged_metrics[metric_name] = value
 
-        # Set threshold
-        merged.threshold = threshold
+        # Create merged result
+        merged = CreditCheckResult(
+            success=True,
+            metrics=merged_metrics,
+            threshold=threshold
+        )
 
         # Check if below threshold
         if threshold and merged.remaining_credit is not None:

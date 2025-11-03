@@ -4,7 +4,7 @@ This is a simplified but functional implementation with key features.
 """
 from datetime import datetime
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, ConversationHandler
 
 from config import settings
 from config.logging import get_logger
@@ -910,151 +910,8 @@ async def add_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Error creating user. Please try again.")
 
 
-async def add_service_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /add_service command - add new service (Super Admin only)"""
-    if not await auth_middleware(update, context):
-        return
-
-    user = context.user_data["db_user"]
-
-    if not user.is_super_admin:
-        await update.message.reply_text(
-            "[ACCESS DENIED]\n\n"
-            "This command requires super admin privileges."
-        )
-        return
-
-    # Parse arguments
-    if len(context.args) < 3:
-        await update.message.reply_text(
-            "[USAGE]\n\n"
-            "/add_service <name> <type> <url> [interval]\n\n"
-            "*Types:*\n"
-            "  • health_check - HTTP health check monitoring\n"
-            "  • api_credit - API credit/usage monitoring\n\n"
-            "*Optional Parameters:*\n"
-            "  • interval - Check interval in seconds (default: 300)\n\n"
-            "*Examples:*\n"
-            "`/add_service MyAPI health_check https://api.example.com/health`\n"
-            "`/add_service Provider1 api_credit https://api.provider.com 3600`\n"
-            "`/add_service Provider2 api_credit https://api.provider.com 3600`\n\n"
-            "*Multi-API Key Support:*\n"
-            "Create multiple services with different names for the same URL.\n"
-            "Each can have its own API key via `/set_api_key`\n"
-            "Configure tracking methods via `/set_tracking`",
-            parse_mode='Markdown'
-        )
-        return
-
-    name = context.args[0]
-    service_type = context.args[1]
-    url = context.args[2]
-    check_interval = int(context.args[3]) if len(context.args) > 3 else 300
-
-    # Validate service type
-    if service_type not in ["health_check", "api_credit"]:
-        await update.message.reply_text(
-            "[INVALID TYPE]\n\n"
-            "Valid types: health_check, api_credit"
-        )
-        return
-
-    # Validate check interval
-    if check_interval < 30 or check_interval > 86400:  # 30 seconds to 24 hours
-        await update.message.reply_text(
-            "[INVALID INTERVAL]\n\n"
-            "Check interval must be between 30 and 86400 seconds (30s to 24h)"
-        )
-        return
-
-    try:
-        from config import settings
-        async with get_session() as session:
-            from repositories.service_repository import ServiceRepository
-            service_repo = ServiceRepository(session)
-
-            # Check if service already exists
-            existing = await service_repo.get_by_name(name, settings.environment)
-            if existing:
-                await update.message.reply_text(
-                    "[SERVICE EXISTS]\n\n"
-                    f"Service '{name}' already exists in {settings.environment} environment."
-                )
-                return
-
-            # Prepare service parameters based on type
-            service_params = {
-                "name": name,
-                "service_type": service_type,
-                "environment": settings.environment,
-                "is_active": True,
-                "check_interval_seconds": check_interval,
-            }
-
-            # Add type-specific parameters
-            if service_type == "health_check":
-                service_params["endpoint_url"] = url
-                service_params["expected_status_code"] = 200
-                service_params["timeout_seconds"] = 10
-            elif service_type == "api_credit":
-                service_params["endpoint_url"] = url
-                service_params["api_provider"] = "custom"
-                service_params["credit_check_interval_hours"] = check_interval // 3600 if check_interval >= 3600 else 1
-                # Set default tracking config - both methods enabled
-                service_params["api_tracking_config"] = {
-                    "methods": ["key_management", "credits"],
-                    "key_management_path": "/api/v1/key",
-                    "credits_path": "/api/v1/credits"
-                }
-
-            # Create new service
-            new_service = await service_repo.create(**service_params)
-            await session.commit()
-
-        # Format response based on service type
-        response = (
-            "[SERVICE CREATED]\n\n"
-            f"Name: {name}\n"
-            f"Type: {service_type}\n"
-            f"URL: {url}\n"
-            f"Check Interval: {check_interval}s ({check_interval // 60}min)\n"
-            f"Environment: {settings.environment}\n"
-            f"Service ID: {new_service.id}\n\n"
-        )
-
-        if service_type == "health_check":
-            response += f"Expected Status: 200\nTimeout: 10s\n\n"
-        elif service_type == "api_credit":
-            response += (
-                "Tracking: key_management + credits APIs\n\n"
-                f"Next steps:\n"
-                f"1. Set API key: `/set_api_key {new_service.id} <your-key>`\n"
-                f"2. Customize tracking: `/set_tracking {new_service.id}` (optional)\n"
-                f"3. Assign users: `/assign <user_id> {new_service.id}`\n"
-            )
-
-        if service_type == "health_check":
-            response += f"Use `/assign <user_id> {new_service.id}` to give users access."
-
-        await update.message.reply_text(response, parse_mode='Markdown')
-
-        log.info(
-            "service_created_via_bot",
-            admin_id=user.id,
-            service_id=new_service.id,
-            name=name,
-            type=service_type,
-            check_interval=check_interval
-        )
-
-    except ValueError:
-        await update.message.reply_text(
-            "[INVALID INPUT]\n\n"
-            "Check interval must be a number."
-        )
-    except Exception as e:
-        log.error("add_service_handler_error", error=str(e))
-        await update.message.reply_text(f"Error creating service: {str(e)}")
+# OLD add_service_handler removed - Replaced with interactive conversation flow
+# See telegram_bot/service_config_conversation.py for the new implementation
 
 
 async def set_api_key_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1385,7 +1242,11 @@ def create_bot(environment: str) -> Application:
 
     # Super Admin commands
     application.add_handler(CommandHandler("add_user", add_user_handler))
-    application.add_handler(CommandHandler("add_service", add_service_handler))
+
+    # Add service conversation handler (interactive flow)
+    from telegram_bot.service_config_conversation import get_add_service_conversation_handler
+    application.add_handler(get_add_service_conversation_handler())
+
     application.add_handler(CommandHandler("set_api_key", set_api_key_handler))
     application.add_handler(CommandHandler("set_tracking", set_tracking_handler))
     application.add_handler(CommandHandler("list_users", list_users_handler))
