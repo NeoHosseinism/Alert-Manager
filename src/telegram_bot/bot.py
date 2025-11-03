@@ -2,7 +2,7 @@
 Telegram bot with authentication and role-based commands
 This is a simplified but functional implementation with key features.
 """
-from telegram import Update
+from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from config import settings
@@ -65,39 +65,173 @@ async def auth_middleware(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 # Command Handlers
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
-    if not await auth_middleware(update, context):
+    if not update.effective_user:
         return
 
-    user = context.user_data["db_user"]
+    telegram_user = update.effective_user
 
-    message = (
-        f"Welcome, {user.telegram_username or 'User'}!\n\n"
-        f"Your role: {user.role}\n\n"
-        f"Available commands:\n"
-        f"/status - Show service status\n"
-        f"/services - List your services\n"
-        f"/alerts - Recent alerts\n"
-        f"/mute <service> <hours> - Mute alerts\n"
-        f"/unmute <service> - Unmute alerts\n"
-        f"/muted - Show muted services\n\n"
-    )
+    try:
+        async with get_session() as session:
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(telegram_user.id)
 
-    if user.is_admin:
-        message += (
-            "Admin commands:\n"
-            "/assign <phone> <service> - Assign service\n"
-            "/unassign <phone> <service> - Remove access\n\n"
+        # If user not found by Telegram ID, request phone verification
+        if not user:
+            contact_button = KeyboardButton(
+                text="Share Phone Number",
+                request_contact=True
+            )
+            keyboard = ReplyKeyboardMarkup(
+                [[contact_button]],
+                one_time_keyboard=True,
+                resize_keyboard=True
+            )
+
+            await update.message.reply_text(
+                "[PHONE VERIFICATION REQUIRED]\n\n"
+                "To link your Telegram account with the system, "
+                "please share your phone number by clicking the button below.\n\n"
+                "Note: Your phone number must be registered in the system first. "
+                "Contact your administrator if you don't have access.",
+                reply_markup=keyboard
+            )
+            log.info(
+                "phone_verification_requested",
+                telegram_id=telegram_user.id,
+                username=telegram_user.username
+            )
+            return
+
+        # Check if user is active
+        if not user.is_active:
+            await update.message.reply_text(
+                "[ACCOUNT DISABLED]\n\n"
+                "Your account has been deactivated.\n"
+                "Please contact your administrator."
+            )
+            return
+
+        # User authenticated successfully
+        message = (
+            f"Welcome, {user.telegram_username or 'User'}!\n\n"
+            f"Your role: {user.role}\n\n"
+            f"Available commands:\n"
+            f"/status - Show service status\n"
+            f"/services - List your services\n"
+            f"/alerts - Recent alerts\n"
+            f"/mute <service> <hours> - Mute alerts\n"
+            f"/unmute <service> - Unmute alerts\n"
+            f"/muted - Show muted services\n\n"
         )
 
-    if user.is_super_admin:
-        message += (
-            "Super Admin commands:\n"
-            "/add_user <phone> <role> - Add user\n"
-            "/add_service <name> <type> <url> - Add service\n"
-            "/list_users - List all users\n"
-        )
+        if user.is_admin:
+            message += (
+                "Admin commands:\n"
+                "/assign <phone> <service> - Assign service\n"
+                "/unassign <phone> <service> - Remove access\n\n"
+            )
 
-    await update.message.reply_text(message)
+        if user.is_super_admin:
+            message += (
+                "Super Admin commands:\n"
+                "/add_user <phone> <role> - Add user\n"
+                "/add_service <name> <type> <url> - Add service\n"
+                "/list_users - List all users\n"
+            )
+
+        await update.message.reply_text(message, reply_markup=ReplyKeyboardRemove())
+
+    except Exception as e:
+        log.error("start_handler_error", error=str(e))
+        await update.message.reply_text("An error occurred. Please try again.")
+
+
+async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle contact sharing for phone verification"""
+    if not update.effective_user or not update.message.contact:
+        return
+
+    telegram_user = update.effective_user
+    contact = update.message.contact
+
+    # Verify the contact is the user's own number
+    if contact.user_id != telegram_user.id:
+        await update.message.reply_text(
+            "[VERIFICATION FAILED]\n\n"
+            "You must share your own phone number, not someone else's.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+
+    phone_number = contact.phone_number
+
+    # Normalize phone number to E.164 format
+    if not phone_number.startswith('+'):
+        phone_number = '+' + phone_number
+
+    try:
+        async with get_session() as session:
+            user_repo = UserRepository(session)
+
+            # Look up user by phone number
+            user = await user_repo.get_by_phone(phone_number)
+
+            if not user:
+                await update.message.reply_text(
+                    "[ACCESS DENIED]\n\n"
+                    f"Phone number {phone_number} is not registered in the system.\n"
+                    "Please contact your administrator to get access.",
+                    reply_markup=ReplyKeyboardRemove()
+                )
+                log.warning(
+                    "phone_verification_failed_not_registered",
+                    phone_number=phone_number,
+                    telegram_id=telegram_user.id,
+                    username=telegram_user.username
+                )
+                return
+
+            # Check if user is active
+            if not user.is_active:
+                await update.message.reply_text(
+                    "[ACCOUNT DISABLED]\n\n"
+                    "Your account has been deactivated.\n"
+                    "Please contact your administrator.",
+                    reply_markup=ReplyKeyboardRemove()
+                )
+                return
+
+            # Link Telegram account to database user
+            await user_repo.update(
+                user.id,
+                telegram_user_id=telegram_user.id,
+                telegram_username=telegram_user.username
+            )
+
+            await update.message.reply_text(
+                "[VERIFICATION SUCCESSFUL]\n\n"
+                f"Your Telegram account has been linked successfully!\n"
+                f"Phone: {phone_number}\n"
+                f"Role: {user.role}\n\n"
+                "Please send /start again to see available commands.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+
+            log.info(
+                "phone_verification_success",
+                phone_number=phone_number,
+                telegram_id=telegram_user.id,
+                username=telegram_user.username,
+                user_id=user.id,
+                role=user.role
+            )
+
+    except Exception as e:
+        log.error("contact_handler_error", error=str(e))
+        await update.message.reply_text(
+            "An error occurred during verification. Please try again.",
+            reply_markup=ReplyKeyboardRemove()
+        )
 
 
 async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -151,6 +285,9 @@ def create_bot(environment: str) -> Application:
     application.add_handler(CommandHandler("start", start_handler))
     application.add_handler(CommandHandler("help", help_handler))
     application.add_handler(CommandHandler("status", status_handler))
+
+    # Register contact handler for phone verification
+    application.add_handler(MessageHandler(filters.CONTACT, contact_handler))
 
     # Additional handlers would be added here:
     # application.add_handler(CommandHandler("services", services_handler))
