@@ -32,26 +32,37 @@ def create_engine() -> AsyncEngine:
     # Choose pool class based on environment
     if settings.is_dev:
         poolclass = NullPool  # No pooling in dev for easier debugging
+        # NullPool doesn't use pool_size, max_overflow, or pool_recycle
+        engine = create_async_engine(
+            settings.database_url,
+            echo=settings.database_echo,
+            poolclass=poolclass,
+            pool_pre_ping=True,  # Verify connections before using
+            future=True,
+        )
+        log.info(
+            "database_engine_created",
+            poolclass="NullPool",
+            environment=settings.environment,
+        )
     else:
         poolclass = QueuePool
-
-    engine = create_async_engine(
-        settings.database_url,
-        echo=settings.database_echo,
-        poolclass=poolclass,
-        pool_size=settings.database_pool_size if not settings.is_dev else 0,
-        max_overflow=settings.database_max_overflow if not settings.is_dev else 0,
-        pool_recycle=settings.database_pool_recycle,
-        pool_pre_ping=True,  # Verify connections before using
-        future=True,
-    )
-
-    log.info(
-        "database_engine_created",
-        pool_size=settings.database_pool_size if not settings.is_dev else 0,
-        max_overflow=settings.database_max_overflow if not settings.is_dev else 0,
-        environment=settings.environment,
-    )
+        engine = create_async_engine(
+            settings.database_url,
+            echo=settings.database_echo,
+            poolclass=poolclass,
+            pool_size=settings.database_pool_size,
+            max_overflow=settings.database_max_overflow,
+            pool_recycle=settings.database_pool_recycle,
+            pool_pre_ping=True,  # Verify connections before using
+            future=True,
+        )
+        log.info(
+            "database_engine_created",
+            pool_size=settings.database_pool_size,
+            max_overflow=settings.database_max_overflow,
+            environment=settings.environment,
+        )
 
     return engine
 
