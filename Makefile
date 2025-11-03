@@ -8,17 +8,17 @@ install:  ## Install dependencies with Poetry
 	poetry install
 
 migrate:  ## Run database migrations (upgrade to latest)
-	PYTHONPATH=src poetry run alembic upgrade head
+	ENVIRONMENT=dev PYTHONPATH=src poetry run alembic upgrade head
 
 migrate-down:  ## Rollback last migration
-	poetry run alembic downgrade -1
+	ENVIRONMENT=dev PYTHONPATH=src poetry run alembic downgrade -1
 
 migrate-create:  ## Create new migration (use: make migrate-create MSG="description")
 	@if [ -z "$(MSG)" ]; then \
 		echo "Error: MSG is required. Usage: make migrate-create MSG='your migration message'"; \
 		exit 1; \
 	fi
-	poetry run alembic revision --autogenerate -m "$(MSG)"
+	ENVIRONMENT=dev PYTHONPATH=src poetry run alembic revision --autogenerate -m "$(MSG)"
 
 add-user:  ## Add a new user - ROLES: viewer|admin|super_admin (use: make add-user PHONE=+1234567890 ROLE=admin)
 	@if [ -z "$(PHONE)" ]; then \
