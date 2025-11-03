@@ -99,9 +99,22 @@ async def run_async_migrations() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode."""
+    """Run migrations in 'online' mode with synchronous connection."""
+    from sqlalchemy import create_engine
 
-    asyncio.run(run_async_migrations())
+    # Use synchronous URL for migrations (convert asyncpg to psycopg2)
+    sync_url = settings.database_sync_url
+
+    connectable = create_engine(sync_url, poolclass=pool.NullPool)
+
+    with connectable.connect() as connection:
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata
+        )
+
+        with context.begin_transaction():
+            context.run_migrations()
 
 
 if context.is_offline_mode():
