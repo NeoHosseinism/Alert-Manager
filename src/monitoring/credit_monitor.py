@@ -86,9 +86,56 @@ class CreditMonitor:
                 return CreditCheckResult(success=False, error="No API key configured")
 
             # Get tracking configuration
-            tracking_config = service.api_tracking_config
+            # If service has a provider_id, use the latest provider definition from code
+            # This ensures users always get the latest field mappings without manual refresh
+            tracking_config = None
+
+            if service.api_provider:
+                # Try to get provider from code (case-insensitive)
+                from config.providers import get_provider, PROVIDERS
+
+                # Try exact match first
+                provider_config = get_provider(service.api_provider)
+
+                # If not found, try case-insensitive match
+                if not provider_config:
+                    provider_id_lower = service.api_provider.lower()
+                    for pid, pconfig in PROVIDERS.items():
+                        if pid.lower() == provider_id_lower:
+                            provider_config = pconfig
+                            break
+
+                if provider_config:
+                    # Convert provider config to tracking config format
+                    tracking_config = {
+                        "provider_id": provider_config.provider_id,
+                        "endpoints": []
+                    }
+
+                    for endpoint in provider_config.endpoints:
+                        endpoint_dict = {
+                            "name": endpoint.name,
+                            "path": endpoint.path,
+                            "method": endpoint.method,
+                            "headers_template": endpoint.headers_template,
+                            "response_data_path": endpoint.response_data_path,
+                            "field_mappings": endpoint.field_mappings,
+                        }
+                        if endpoint.request_body:
+                            endpoint_dict["request_body"] = endpoint.request_body
+                        tracking_config["endpoints"].append(endpoint_dict)
+
+                    self.log.debug(
+                        "using_provider_from_code",
+                        service=service.name,
+                        provider_id=provider_config.provider_id
+                    )
+
+            # Fall back to stored configuration if no provider found
             if not tracking_config:
-                return CreditCheckResult(success=False, error="No tracking configuration")
+                tracking_config = service.api_tracking_config
+                if not tracking_config:
+                    return CreditCheckResult(success=False, error="No tracking configuration")
 
             endpoints = tracking_config.get("endpoints", [])
             if not endpoints:
