@@ -674,5 +674,5 @@ def get_add_service_conversation_handler() -> ConversationHandler:
             CONFIRM_CONFIG: [CallbackQueryHandler(confirm_config)],
         },
         fallbacks=[CommandHandler("cancel", cancel_conversation)],
-        per_message=True,  # Fix PTBUserWarning: properly track CallbackQueryHandler per message
+        # per_message=True removed - not compatible with MessageHandler and CommandHandler
     )
