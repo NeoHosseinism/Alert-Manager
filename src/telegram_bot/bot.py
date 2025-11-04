@@ -404,10 +404,8 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             help_text += (
                 "Development Commands:\n"
                 "/preview_report <daily|weekly|monthly>\n"
-                "  Preview scheduled reports with sample data\n\n"
+                "  Preview scheduled reports with sample data\n"
             )
-
-        help_text += "For detailed documentation, see PROVIDER_SYSTEM.md"
 
     await update.message.reply_text(help_text)
 
@@ -1709,12 +1707,13 @@ async def preview_report_handler(update: Update, context: ContextTypes.DEFAULT_T
 
             # Send chunks
             for i, chunk in enumerate(chunks):
-                if i == 0:
-                    await update.message.reply_text(f"```\n{chunk}\n```", parse_mode='Markdown')
-                else:
-                    await update.message.reply_text(f"```\n{chunk}\n```", parse_mode='Markdown')
+                # Use monospace HTML to avoid Markdown parsing issues
+                escaped_chunk = chunk.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                await update.message.reply_text(f"<pre>{escaped_chunk}</pre>", parse_mode='HTML')
         else:
-            await update.message.reply_text(f"```\n{report}\n```", parse_mode='Markdown')
+            # Use monospace HTML to avoid Markdown parsing issues
+            escaped_report = report.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            await update.message.reply_text(f"<pre>{escaped_report}</pre>", parse_mode='HTML')
 
         log.info(
             "report_previewed",
