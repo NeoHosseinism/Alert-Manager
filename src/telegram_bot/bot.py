@@ -456,8 +456,26 @@ async def services_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"   Type: {service.service_type}\n"
                 f"   Environment: {service.environment}\n"
                 f"   URL: {url}\n"
-                f"   Check Interval: {service.check_interval_seconds}s\n\n"
+                f"   Check Interval: {service.check_interval_seconds}s\n"
             )
+
+            # Show threshold information for API credit services
+            if service.service_type == "api_credit":
+                if service.thresholds_config:
+                    # Multi-threshold config (e.g., OpenRouter with wallet + key)
+                    thresholds_str = "   Thresholds:\n"
+                    if "wallet_remaining" in service.thresholds_config:
+                        thresholds_str += f"      Wallet: ${service.thresholds_config['wallet_remaining']}\n"
+                    if "key_remaining" in service.thresholds_config:
+                        thresholds_str += f"      API Key: ${service.thresholds_config['key_remaining']}\n"
+                    message += thresholds_str
+                elif service.credit_threshold:
+                    # Legacy single threshold
+                    message += f"   Threshold: ${service.credit_threshold}\n"
+                else:
+                    message += "   Threshold: Not set\n"
+
+            message += "\n"
 
         await update.message.reply_text(message)
 
@@ -1125,13 +1143,17 @@ async def edit_service_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             "  • expected_status_code - Expected HTTP status (default 200)\n"
             "  • timeout_seconds - Request timeout (default 10)\n\n"
             "API Credit Fields:\n"
-            "  • credit_threshold - Low credit alert threshold\n"
+            "  • credit_threshold - Low credit alert threshold (legacy)\n"
+            "  • wallet_threshold - Wallet remaining credit threshold (OpenRouter)\n"
+            "  • key_threshold - API key remaining credit threshold (OpenRouter)\n"
             "  • credit_check_interval_hours - Check interval (hours)\n\n"
             "Examples:\n"
             "/edit_service 3 name MyNewAPI\n"
             "/edit_service 3 is_active false\n"
             "/edit_service 3 check_interval_seconds 600\n"
-            "/edit_service 3 credit_threshold 10.50"
+            "/edit_service 3 credit_threshold 10.50\n"
+            "/edit_service 3 wallet_threshold 15.00\n"
+            "/edit_service 3 key_threshold 5.00"
         )
         return
 
@@ -1150,7 +1172,7 @@ async def edit_service_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     valid_fields = [
         "name", "endpoint_url", "is_active", "check_interval_seconds",
         "expected_status_code", "timeout_seconds",
-        "credit_threshold", "credit_check_interval_hours"
+        "credit_threshold", "wallet_threshold", "key_threshold", "credit_check_interval_hours"
     ]
     if field not in valid_fields:
         await update.message.reply_text(
@@ -1211,6 +1233,27 @@ async def edit_service_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         "credit_threshold must be a number (e.g., 10.50)."
                     )
                     return
+            elif field in ["wallet_threshold", "key_threshold"]:
+                # Handle multi-threshold config (wallet_threshold, key_threshold)
+                try:
+                    threshold_value = float(new_value)
+                except ValueError:
+                    await update.message.reply_text(
+                        f"[INVALID VALUE]\n\n"
+                        f"{field} must be a number (e.g., 10.50)."
+                    )
+                    return
+
+                # Get current thresholds_config or create new one
+                thresholds_config = target_service.thresholds_config or {}
+
+                # Update the specific threshold
+                if field == "wallet_threshold":
+                    thresholds_config["wallet_remaining"] = threshold_value
+                elif field == "key_threshold":
+                    thresholds_config["key_remaining"] = threshold_value
+
+                update_data["thresholds_config"] = thresholds_config
 
             # Update service
             await service_repo.update(service_id, **update_data)
@@ -1220,7 +1263,26 @@ async def edit_service_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             updated_service = await service_repo.get_by_id(service_id)
 
         # Format the field value for display
-        display_value = getattr(updated_service, field)
+        if field in ["wallet_threshold", "key_threshold"]:
+            # For threshold config fields, show the value from the JSON
+            if field == "wallet_threshold":
+                display_value = updated_service.thresholds_config.get("wallet_remaining") if updated_service.thresholds_config else None
+            else:  # key_threshold
+                display_value = updated_service.thresholds_config.get("key_remaining") if updated_service.thresholds_config else None
+        else:
+            display_value = getattr(updated_service, field)
+
+        # Build threshold info string for credit services
+        threshold_info = ""
+        if updated_service.service_type == "api_credit":
+            if updated_service.thresholds_config:
+                threshold_info = "\nThresholds:\n"
+                if "wallet_remaining" in updated_service.thresholds_config:
+                    threshold_info += f"  Wallet: ${updated_service.thresholds_config['wallet_remaining']}\n"
+                if "key_remaining" in updated_service.thresholds_config:
+                    threshold_info += f"  API Key: ${updated_service.thresholds_config['key_remaining']}\n"
+            elif updated_service.credit_threshold:
+                threshold_info = f"\nThreshold: ${updated_service.credit_threshold}\n"
 
         await update.message.reply_text(
             "[SERVICE UPDATED]\n\n"
@@ -1229,7 +1291,8 @@ async def edit_service_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             f"Type: {updated_service.service_type}\n"
             f"URL: {updated_service.endpoint_url or 'N/A'}\n"
             f"Active: {updated_service.is_active}\n"
-            f"Check Interval: {updated_service.check_interval_seconds}s\n\n"
+            f"Check Interval: {updated_service.check_interval_seconds}s"
+            f"{threshold_info}\n\n"
             f"Updated field: {field}\n"
             f"New value: {display_value}"
         )

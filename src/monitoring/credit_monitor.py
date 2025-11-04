@@ -157,7 +157,7 @@ class CreditMonitor:
                 error_msg = "; ".join(errors) if errors else "All endpoints failed"
                 return CreditCheckResult(success=False, error=error_msg)
 
-            merged_result = self._merge_results(results, service.credit_threshold)
+            merged_result = self._merge_results(results, service.credit_threshold, service.thresholds_config)
 
             if merged_result.success:
                 self.log.info(
@@ -271,14 +271,16 @@ class CreditMonitor:
             return CreditCheckResult(success=False, error=str(e))
 
     def _merge_results(
-        self, results: List[CreditCheckResult], threshold: Optional[float]
+        self, results: List[CreditCheckResult], threshold: Optional[float],
+        thresholds_config: Optional[Dict[str, Any]] = None
     ) -> CreditCheckResult:
         """
         Merge results from multiple endpoints
 
         Args:
             results: List of credit check results from different endpoints
-            threshold: Credit threshold for alerting
+            threshold: Legacy single credit threshold for alerting
+            thresholds_config: Multi-threshold configuration (e.g., wallet_remaining, key_remaining)
 
         Returns:
             Merged credit check result
@@ -299,8 +301,24 @@ class CreditMonitor:
             threshold=threshold
         )
 
-        # Check if below threshold
-        if threshold and merged.remaining_credit is not None:
+        # Check if below threshold(s)
+        if thresholds_config:
+            # Multi-threshold checking (e.g., OpenRouter with wallet + key)
+            wallet_threshold = thresholds_config.get("wallet_remaining")
+            key_threshold = thresholds_config.get("key_remaining")
+
+            # Check wallet threshold
+            if wallet_threshold and merged_metrics.get("wallet_total_credits") is not None:
+                if merged_metrics["wallet_total_credits"] < wallet_threshold:
+                    merged.below_threshold = True
+
+            # Check API key threshold
+            if key_threshold and merged_metrics.get("key_remaining") is not None:
+                if merged_metrics["key_remaining"] < key_threshold:
+                    merged.below_threshold = True
+
+        elif threshold and merged.remaining_credit is not None:
+            # Legacy single threshold checking
             merged.below_threshold = merged.remaining_credit < threshold
 
         return merged
