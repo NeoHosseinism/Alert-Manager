@@ -2,6 +2,7 @@
 Telegram bot with authentication and role-based commands
 This is a simplified but functional implementation with key features.
 """
+import asyncio
 from datetime import datetime
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, ConversationHandler
