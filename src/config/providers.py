@@ -71,38 +71,39 @@ PROVIDERS: Dict[str, ProviderConfig] = {
         description="OpenRouter AI API with dual-method tracking",
         endpoints=[
             EndpointConfig(
-                name="key_management",
-                path="/api/v1/key",
-                method="GET",
-                headers_template={"Authorization": "Bearer {api_key}"},
-                response_data_path=["data"],
-                field_mappings={
-                    # Map OpenRouter fields to standard metrics
-                    "label": "key_label",
-                    "limit": "total_credit",
-                    "limit_remaining": "remaining_credit",
-                    "limit_reset": "limit_reset",
-                    "usage": "total_usage",
-                    "usage_daily": "usage_daily",
-                    "usage_weekly": "usage_weekly",
-                    "usage_monthly": "usage_monthly",
-                    "byok_usage": "byok_usage",
-                    "byok_usage_daily": "byok_usage_daily",
-                    "byok_usage_weekly": "byok_usage_weekly",
-                    "byok_usage_monthly": "byok_usage_monthly",
-                    "is_free_tier": "is_free_tier",
-                    "include_byok_in_limit": "include_byok_in_limit",
-                }
-            ),
-            EndpointConfig(
                 name="credits",
                 path="/api/v1/credits",
                 method="GET",
                 headers_template={"Authorization": "Bearer {api_key}"},
                 response_data_path=["data"],
                 field_mappings={
-                    "total_credits": "total_credit",
-                    "total_usage": "total_usage",
+                    # Wallet-level metrics (entire account)
+                    "total_credits": "wallet_total_credits",
+                    "total_usage": "wallet_total_usage",
+                }
+            ),
+            EndpointConfig(
+                name="key_management",
+                path="/api/v1/key",
+                method="GET",
+                headers_template={"Authorization": "Bearer {api_key}"},
+                response_data_path=["data"],
+                field_mappings={
+                    # API Key-level metrics (this specific key only)
+                    "label": "key_label",
+                    "limit": "key_limit",
+                    "limit_remaining": "key_remaining",
+                    "limit_reset": "key_limit_reset",
+                    "usage": "key_usage",
+                    "usage_daily": "key_usage_daily",
+                    "usage_weekly": "key_usage_weekly",
+                    "usage_monthly": "key_usage_monthly",
+                    "byok_usage": "key_byok_usage",
+                    "byok_usage_daily": "key_byok_usage_daily",
+                    "byok_usage_weekly": "key_byok_usage_weekly",
+                    "byok_usage_monthly": "key_byok_usage_monthly",
+                    "is_free_tier": "is_free_tier",
+                    "include_byok_in_limit": "include_byok_in_limit",
                 }
             ),
         ]
