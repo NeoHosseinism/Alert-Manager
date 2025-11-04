@@ -140,6 +140,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "/edit_user <user_id> <field> <value> - Edit user\n"
                 "/list_users - List all users\n"
                 "/add_service - Add service (interactive)\n"
+                "/edit_service <service_id> <field> <value> - Edit service\n"
                 "/set_api_key <service_id> <key> - Set API key\n"
                 "/set_tracking <service_id> [...] - Configure tracking\n"
             )
@@ -384,6 +385,11 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Service Management:\n"
             "/add_service - Interactive service creation\n"
             "  Supports pre-defined providers (OpenRouter) and custom APIs\n\n"
+            "/edit_service <service_id> <field> <value>\n"
+            "  Edit service properties\n"
+            "  Fields: name, endpoint_url, is_active, check_interval_seconds,\n"
+            "          expected_status_code, timeout_seconds, credit_threshold\n"
+            "  Example: /edit_service 3 is_active false\n\n"
             "/set_api_key <service_id> <api_key>\n"
             "  Set encrypted API key for credit tracking\n\n"
             "/set_tracking <service_id> [methods] [paths...]\n"
@@ -1079,6 +1085,155 @@ async def edit_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Error updating user: {str(e)}")
 
 
+async def edit_service_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /edit_service command - edit existing service (Super Admin only)"""
+    if not await auth_middleware(update, context):
+        return
+
+    user = context.user_data["db_user"]
+
+    if not user.is_super_admin:
+        await update.message.reply_text(
+            "[ACCESS DENIED]\n\n"
+            "This command requires super admin privileges."
+        )
+        return
+
+    # Parse arguments
+    if len(context.args) < 3:
+        await update.message.reply_text(
+            "[USAGE]\n\n"
+            "/edit_service <service_id> <field> <new_value>\n\n"
+            "Common Fields:\n"
+            "  • name - Service name\n"
+            "  • endpoint_url - Service URL\n"
+            "  • is_active - true, false\n"
+            "  • check_interval_seconds - Check interval (seconds)\n\n"
+            "Health Check Fields:\n"
+            "  • expected_status_code - Expected HTTP status (default 200)\n"
+            "  • timeout_seconds - Request timeout (default 10)\n\n"
+            "API Credit Fields:\n"
+            "  • credit_threshold - Low credit alert threshold\n"
+            "  • credit_check_interval_hours - Check interval (hours)\n\n"
+            "Examples:\n"
+            "/edit_service 3 name MyNewAPI\n"
+            "/edit_service 3 is_active false\n"
+            "/edit_service 3 check_interval_seconds 600\n"
+            "/edit_service 3 credit_threshold 10.50"
+        )
+        return
+
+    try:
+        service_id = int(context.args[0])
+        field = context.args[1].lower()
+        new_value = " ".join(context.args[2:])  # Support multi-word names
+    except ValueError:
+        await update.message.reply_text(
+            "[INVALID INPUT]\n\n"
+            "Service ID must be a number."
+        )
+        return
+
+    # Validate field
+    valid_fields = [
+        "name", "endpoint_url", "is_active", "check_interval_seconds",
+        "expected_status_code", "timeout_seconds",
+        "credit_threshold", "credit_check_interval_hours"
+    ]
+    if field not in valid_fields:
+        await update.message.reply_text(
+            f"[INVALID FIELD]\n\n"
+            f"Valid fields: {', '.join(valid_fields)}"
+        )
+        return
+
+    try:
+        async with get_session() as session:
+            service_repo = ServiceRepository(session)
+
+            # Get service
+            target_service = await service_repo.get_by_id(service_id)
+            if not target_service:
+                await update.message.reply_text(
+                    "[SERVICE NOT FOUND]\n\n"
+                    f"No service found with ID: {service_id}\n\n"
+                    "Use /list_services to see all service IDs"
+                )
+                return
+
+            # Prepare update data
+            update_data = {}
+
+            if field == "name":
+                update_data["name"] = new_value
+            elif field == "endpoint_url":
+                update_data["endpoint_url"] = new_value
+            elif field == "is_active":
+                if new_value.lower() in ["true", "1", "yes"]:
+                    update_data["is_active"] = True
+                elif new_value.lower() in ["false", "0", "no"]:
+                    update_data["is_active"] = False
+                else:
+                    await update.message.reply_text(
+                        "[INVALID VALUE]\n\n"
+                        "is_active must be: true, false, 1, 0, yes, or no"
+                    )
+                    return
+            elif field in ["check_interval_seconds", "expected_status_code",
+                          "timeout_seconds", "credit_check_interval_hours"]:
+                try:
+                    update_data[field] = int(new_value)
+                except ValueError:
+                    await update.message.reply_text(
+                        f"[INVALID VALUE]\n\n"
+                        f"{field} must be a number."
+                    )
+                    return
+            elif field == "credit_threshold":
+                try:
+                    update_data[field] = float(new_value)
+                except ValueError:
+                    await update.message.reply_text(
+                        "[INVALID VALUE]\n\n"
+                        "credit_threshold must be a number (e.g., 10.50)."
+                    )
+                    return
+
+            # Update service
+            await service_repo.update(service_id, **update_data)
+            await session.commit()
+
+            # Get updated service
+            updated_service = await service_repo.get_by_id(service_id)
+
+        # Format the field value for display
+        display_value = getattr(updated_service, field)
+
+        await update.message.reply_text(
+            "[SERVICE UPDATED]\n\n"
+            f"Service ID: {service_id}\n"
+            f"Name: {updated_service.name}\n"
+            f"Type: {updated_service.service_type}\n"
+            f"URL: {updated_service.endpoint_url or 'N/A'}\n"
+            f"Active: {updated_service.is_active}\n"
+            f"Check Interval: {updated_service.check_interval_seconds}s\n\n"
+            f"Updated field: {field}\n"
+            f"New value: {display_value}"
+        )
+
+        log.info(
+            "service_edited_via_bot",
+            admin_id=user.id,
+            service_id=service_id,
+            field=field,
+            new_value=new_value
+        )
+
+    except Exception as e:
+        log.error("edit_service_handler_error", error=str(e), exc_info=True)
+        await update.message.reply_text(f"Error updating service: {str(e)}")
+
+
 # OLD add_service_handler removed - Replaced with interactive conversation flow
 # See telegram_bot/service_config_conversation.py for the new implementation
 
@@ -1417,6 +1572,7 @@ def create_bot(environment: str) -> Application:
     from telegram_bot.service_config_conversation import get_add_service_conversation_handler
     application.add_handler(get_add_service_conversation_handler())
 
+    application.add_handler(CommandHandler("edit_service", edit_service_handler))
     application.add_handler(CommandHandler("set_api_key", set_api_key_handler))
     application.add_handler(CommandHandler("set_tracking", set_tracking_handler))
     application.add_handler(CommandHandler("list_users", list_users_handler))
