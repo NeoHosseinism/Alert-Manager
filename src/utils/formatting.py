@@ -226,6 +226,11 @@ def format_credit_check_result(service_name: str, service_env: str, credit_data:
         lines.append("   📊 Summary:")
         lines.append(f"      Total Credits: {format_currency(total)}")
         lines.append(f"      Total Usage: {format_currency(usage)}")
+
+        # Calculate and show remaining
+        remaining_calc = total - usage if usage else total
+        lines.append(f"      Remaining: {format_currency(remaining_calc)}")
+
         if total > 0:
             used_percentage = (usage / total * 100) if usage else 0
             lines.append(f"      Used: {used_percentage:.1f}%")
@@ -282,6 +287,7 @@ def format_credit_check_result(service_name: str, service_env: str, credit_data:
             lines.append(f"         Weekly: {format_currency(weekly_usage)}")
         if monthly_usage is not None:
             lines.append(f"         Monthly: {format_currency(monthly_usage)}")
+        lines.append("         ⚠️ Note: Periods calculated in UTC timezone")
 
     # BYOK usage if available
     byok_usage = credit_data.get("byok_usage")
@@ -300,6 +306,9 @@ def format_credit_check_result(service_name: str, service_env: str, credit_data:
             lines.append(f"         Weekly: {format_currency(byok_weekly)}")
         if byok_monthly is not None:
             lines.append(f"         Monthly: {format_currency(byok_monthly)}")
+        # Only show note if any time-based metrics exist
+        if any(x is not None for x in [byok_daily, byok_weekly, byok_monthly]):
+            lines.append("         ⚠️ Note: Periods calculated in UTC timezone")
 
     # Additional metadata
     is_free_tier = credit_data.get("is_free_tier")
