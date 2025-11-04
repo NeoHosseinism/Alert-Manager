@@ -397,6 +397,8 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "  Set encrypted API key for credit tracking\n\n"
             "/set_tracking <service_id> [methods] [paths...]\n"
             "  Configure API tracking methods (optional)\n\n"
+            "/refresh_provider <service_id>\n"
+            "  Update service to use latest provider configuration\n\n"
             "For detailed documentation, see PROVIDER_SYSTEM.md"
         )
 
@@ -1526,6 +1528,131 @@ async def list_users_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("Error fetching users. Please try again.")
 
 
+async def refresh_provider_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /refresh_provider command - update service to use latest provider config (Super Admin only)"""
+    if not await auth_middleware(update, context):
+        return
+
+    user = context.user_data["db_user"]
+
+    if not user.is_super_admin:
+        await update.message.reply_text(
+            "[ACCESS DENIED]\n\n"
+            "This command requires super admin privileges."
+        )
+        return
+
+    # Parse arguments
+    if len(context.args) < 1:
+        await update.message.reply_text(
+            "[USAGE]\n\n"
+            "/refresh_provider <service_id>\n\n"
+            "Updates the service configuration to use the latest provider definition.\n"
+            "This is useful after code updates that change field mappings.\n\n"
+            "*Example:*\n"
+            "`/refresh_provider 1`",
+            parse_mode='Markdown'
+        )
+        return
+
+    try:
+        service_id = int(context.args[0])
+
+        async with get_session() as session:
+            from repositories.service_repository import ServiceRepository
+            from config.providers import get_provider
+            service_repo = ServiceRepository(session)
+
+            # Get service
+            service = await service_repo.get_by_id(service_id)
+            if not service:
+                await update.message.reply_text(
+                    "[SERVICE NOT FOUND]\n\n"
+                    f"No service found with ID: {service_id}\n\n"
+                    "Use `/services` to see all service IDs",
+                    parse_mode='Markdown'
+                )
+                return
+
+            # Verify it's an API credit service
+            if service.service_type != "api_credit":
+                await update.message.reply_text(
+                    "[INVALID SERVICE TYPE]\n\n"
+                    f"Service '{service.name}' is a {service.service_type} service.\n"
+                    "Only api_credit services have provider configurations."
+                )
+                return
+
+            # Get provider ID from service
+            provider_id = service.api_provider
+            if not provider_id:
+                await update.message.reply_text(
+                    "[NO PROVIDER]\n\n"
+                    f"Service '{service.name}' doesn't have a provider set.\n"
+                    "Cannot refresh configuration."
+                )
+                return
+
+            # Get latest provider config
+            provider_config = get_provider(provider_id)
+            if not provider_config:
+                await update.message.reply_text(
+                    "[PROVIDER NOT FOUND]\n\n"
+                    f"Provider '{provider_id}' not found in system.\n"
+                    "Cannot refresh configuration."
+                )
+                return
+
+            # Convert provider config to api_tracking_config format
+            tracking_config = {
+                "provider_id": provider_config.provider_id,
+                "endpoints": []
+            }
+
+            for endpoint in provider_config.endpoints:
+                endpoint_dict = {
+                    "name": endpoint.name,
+                    "path": endpoint.path,
+                    "method": endpoint.method,
+                    "headers_template": endpoint.headers_template,
+                    "response_data_path": endpoint.response_data_path,
+                    "field_mappings": endpoint.field_mappings,
+                }
+                if endpoint.request_body:
+                    endpoint_dict["request_body"] = endpoint.request_body
+                tracking_config["endpoints"].append(endpoint_dict)
+
+            # Update service with new config
+            await service_repo.update(service_id, api_tracking_config=tracking_config)
+            await session.commit()
+
+        await update.message.reply_text(
+            "[PROVIDER CONFIGURATION REFRESHED]\n\n"
+            f"Service: {service.name} (ID: {service_id})\n"
+            f"Provider: {provider_config.name}\n"
+            f"Endpoints: {len(provider_config.endpoints)}\n\n"
+            "Configuration updated to latest version.\n"
+            "Use `/check credit {service_id}` to test the new configuration.",
+            parse_mode='Markdown'
+        )
+
+        log.info(
+            "provider_config_refreshed",
+            admin_id=user.id,
+            service_id=service_id,
+            provider_id=provider_id
+        )
+
+    except ValueError:
+        await update.message.reply_text(
+            "[INVALID INPUT]\n\n"
+            "Service ID must be a number."
+        )
+    except Exception as e:
+        log.error("refresh_provider_handler_error", error=str(e))
+        await update.message.reply_text(f"Error refreshing provider config: {str(e)}")
+
+
 async def check_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /check command - perform manual health or credit checks"""
     if not await auth_middleware(update, context):
@@ -1867,6 +1994,7 @@ def create_bot(environment: str) -> Application:
     application.add_handler(CommandHandler("edit_service", edit_service_handler))
     application.add_handler(CommandHandler("set_api_key", set_api_key_handler))
     application.add_handler(CommandHandler("set_tracking", set_tracking_handler))
+    application.add_handler(CommandHandler("refresh_provider", refresh_provider_handler))
     application.add_handler(CommandHandler("list_users", list_users_handler))
 
     log.info("telegram_bot_created", bot_username=bot_name, handlers=len(application.handlers))
