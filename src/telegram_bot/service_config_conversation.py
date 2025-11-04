@@ -99,7 +99,7 @@ async def choose_service_type(update: Update, context: ContextTypes.DEFAULT_TYPE
         msg = (
             "*SERVICE SETUP \\- Step 2/5*\n\n"
             "Enter service details in this format:\n\n"
-            "<name> <url> \\[interval\\_seconds\\]\n\n"
+            "\\<name\\> \\<url\\> \\[interval\\_seconds\\]\n\n"
             "Example:\n"
             "`MyAPI https://api\\.example\\.com/health 300`\n\n"
             "Or type /cancel to cancel\\."
@@ -165,7 +165,7 @@ async def choose_provider_mode(update: Update, context: ContextTypes.DEFAULT_TYP
         "*SERVICE SETUP \\- Step 3/5*\n\n"
         "Let's configure your custom API provider\\.\n\n"
         "First, enter the service name and base URL:\n\n"
-        "<service\\_name> <base\\_url>\n\n"
+        "\\<service\\_name\\> \\<base\\_url\\>\n\n"
         "Example:\n"
         "`MyAPI https://api\\.myprovider\\.com`\n\n"
         "Or type /cancel to cancel\\."
@@ -202,7 +202,7 @@ async def select_provider(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         f"Default Base URL: {escape_markdown_v2(provider.base_url)}\n"
         f"Endpoints:\n{escape_markdown_v2(endpoints_info)}\n\n"
         "Enter service name and optional custom base URL:\n\n"
-        "<service\\_name> \\[custom\\_base\\_url\\]\n\n"
+        "\\<service\\_name\\> \\[custom\\_base\\_url\\]\n\n"
         "Examples:\n"
         f"`MyOpenRouter`  \\(uses default {escape_markdown_v2(provider.base_url)}\\)\n"
         "`MyCustom https://custom\\.openrouter\\.ai`\n\n"
@@ -230,7 +230,7 @@ async def handle_basic_info(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             msg = (
                 "*INVALID INPUT*\n\n"
                 "Please provide at least name and URL\\.\n\n"
-                "Format: <name> <url> \\[interval\\_seconds\\]"
+                "Format: \\<name\\> \\<url\\> \\[interval\\_seconds\\]"
             )
             await update.message.reply_text(msg, parse_mode='MarkdownV2')
             return ENTER_BASIC_INFO
