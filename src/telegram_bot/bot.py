@@ -1149,6 +1149,7 @@ async def edit_service_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     try:
         async with get_session() as session:
+            from repositories.service_repository import ServiceRepository
             service_repo = ServiceRepository(session)
 
             # Get service
