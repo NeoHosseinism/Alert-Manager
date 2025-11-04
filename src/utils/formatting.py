@@ -214,54 +214,105 @@ def format_credit_check_result(service_name: str, service_env: str, credit_data:
     Returns:
         Formatted credit check result
     """
-    remaining = credit_data.get("remaining_credit")
+    lines = [f"💳 {service_name} ({service_env})"]
+    lines.append("")  # Empty line for spacing
+
+    # ===== SUMMARY SECTION =====
+    # Show quick overview (from /api/v1/credits endpoint style)
     total = credit_data.get("total_credit")
     usage = credit_data.get("total_usage")
 
-    lines = [f"💳 {service_name} ({service_env})"]
+    if total is not None and usage is not None:
+        lines.append("   📊 Summary:")
+        lines.append(f"      Total Credits: {format_currency(total)}")
+        lines.append(f"      Total Usage: {format_currency(usage)}")
+        if total > 0:
+            used_percentage = (usage / total * 100) if usage else 0
+            lines.append(f"      Used: {used_percentage:.1f}%")
+        lines.append("")  # Empty line for spacing
 
-    # Show credit balance
-    if remaining is not None and total is not None:
-        percentage = (remaining / total * 100) if total > 0 else 0
-        lines.append(f"   Balance: {format_currency(remaining)} / {format_currency(total)} ({percentage:.1f}%)")
+    # ===== DETAILED SECTION =====
+    # Show detailed breakdown (from /api/v1/key endpoint)
+    lines.append("   📝 Detailed Breakdown:")
 
-        # Check threshold warning
-        if threshold and remaining < threshold:
-            lines.append(f"   Status: ⚠️ Below threshold ({format_currency(threshold)})")
-        else:
-            lines.append("   Status: ✅ Healthy")
-    elif remaining is not None:
-        lines.append(f"   Remaining: {format_currency(remaining)}")
-
-    # Show usage information
-    if usage is not None:
-        lines.append(f"   Total Usage: {format_currency(usage)}")
-
-    # Show usage periods if available
-    daily_usage = credit_data.get("usage_daily")
-    if daily_usage is not None:
-        lines.append(f"   Daily Usage: {format_currency(daily_usage)}")
-
-    weekly_usage = credit_data.get("usage_weekly")
-    if weekly_usage is not None:
-        lines.append(f"   Weekly Usage: {format_currency(weekly_usage)}")
-
-    monthly_usage = credit_data.get("usage_monthly")
-    if monthly_usage is not None:
-        lines.append(f"   Monthly Usage: {format_currency(monthly_usage)}")
-
-    # Show additional info
+    # Key label
     key_label = credit_data.get("key_label")
     if key_label:
-        lines.append(f"   Key: {key_label}")
+        lines.append(f"      Label: {key_label}")
 
-    is_free_tier = credit_data.get("is_free_tier")
-    if is_free_tier is not None:
-        tier = "Free" if is_free_tier else "Paid"
-        lines.append(f"   Tier: {tier}")
+    # Limit information
+    limit = credit_data.get("total_credit")
+    if limit is not None:
+        if limit == 0:
+            lines.append("      Limit: Unlimited")
+        else:
+            lines.append(f"      Limit: {format_currency(limit)}")
 
+    # Remaining balance
+    remaining = credit_data.get("remaining_credit")
+    if remaining is not None:
+        if limit is not None and limit > 0:
+            percentage = (remaining / limit * 100) if limit > 0 else 0
+            lines.append(f"      Remaining: {format_currency(remaining)} ({percentage:.1f}%)")
+
+            # Check threshold warning
+            if threshold and remaining < threshold:
+                lines.append(f"      Status: ⚠️ Below threshold ({format_currency(threshold)})")
+            else:
+                lines.append("      Status: ✅ Healthy")
+        else:
+            lines.append(f"      Remaining: {format_currency(remaining)}")
+
+    # Limit reset
     limit_reset = credit_data.get("limit_reset")
     if limit_reset:
-        lines.append(f"   Reset: {limit_reset}")
+        lines.append(f"      Limit Reset: {limit_reset}")
+
+    # Usage breakdown by period
+    daily_usage = credit_data.get("usage_daily")
+    weekly_usage = credit_data.get("usage_weekly")
+    monthly_usage = credit_data.get("usage_monthly")
+
+    if daily_usage is not None or weekly_usage is not None or monthly_usage is not None:
+        lines.append("")
+        lines.append("      Usage Breakdown:")
+        if daily_usage is not None:
+            lines.append(f"         Daily: {format_currency(daily_usage)}")
+        if weekly_usage is not None:
+            lines.append(f"         Weekly: {format_currency(weekly_usage)}")
+        if monthly_usage is not None:
+            lines.append(f"         Monthly: {format_currency(monthly_usage)}")
+
+    # BYOK usage if available
+    byok_usage = credit_data.get("byok_usage")
+    byok_daily = credit_data.get("byok_usage_daily")
+    byok_weekly = credit_data.get("byok_usage_weekly")
+    byok_monthly = credit_data.get("byok_usage_monthly")
+
+    if any(x is not None for x in [byok_usage, byok_daily, byok_weekly, byok_monthly]):
+        lines.append("")
+        lines.append("      BYOK Usage:")
+        if byok_usage is not None:
+            lines.append(f"         Total: {format_currency(byok_usage)}")
+        if byok_daily is not None:
+            lines.append(f"         Daily: {format_currency(byok_daily)}")
+        if byok_weekly is not None:
+            lines.append(f"         Weekly: {format_currency(byok_weekly)}")
+        if byok_monthly is not None:
+            lines.append(f"         Monthly: {format_currency(byok_monthly)}")
+
+    # Additional metadata
+    is_free_tier = credit_data.get("is_free_tier")
+    include_byok = credit_data.get("include_byok_in_limit")
+
+    if is_free_tier is not None or include_byok is not None:
+        lines.append("")
+        lines.append("      Metadata:")
+        if is_free_tier is not None:
+            tier = "Free Tier" if is_free_tier else "Paid Tier"
+            lines.append(f"         Account Type: {tier}")
+        if include_byok is not None:
+            byok_text = "Yes" if include_byok else "No"
+            lines.append(f"         BYOK in Limit: {byok_text}")
 
     return "\n".join(lines)

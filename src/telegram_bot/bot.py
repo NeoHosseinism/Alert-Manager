@@ -1672,15 +1672,20 @@ async def check_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Format and send results
         from datetime import datetime
         from utils.formatting import format_health_check_result, format_credit_check_result
+        from utils.jalali import format_jalali_datetime
 
-        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+        now = datetime.utcnow()
+        timestamp_gregorian = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+        timestamp_jalali = format_jalali_datetime(now, include_time=True)
 
         if mode == "health":
             header = "🏥 Manual Health Check Report\n"
-            header += f"Checked at: {timestamp}\n\n"
+            header += f"Checked at: {timestamp_gregorian}\n"
+            header += f"           {timestamp_jalali} (Persian)\n\n"
         else:
             header = "💳 Manual Credit Check Report\n"
-            header += f"Checked at: {timestamp}\n\n"
+            header += f"Checked at: {timestamp_gregorian}\n"
+            header += f"           {timestamp_jalali} (Persian)\n\n"
 
         message = header
 
