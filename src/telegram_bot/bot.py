@@ -397,8 +397,17 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "  Set encrypted API key for credit tracking\n\n"
             "/set_tracking <service_id> [methods] [paths...]\n"
             "  Configure API tracking methods (optional)\n\n"
-            "For detailed documentation, see PROVIDER_SYSTEM.md"
         )
+
+        # Add dev-only commands
+        if settings.environment == "dev":
+            help_text += (
+                "Development Commands:\n"
+                "/preview_report <daily|weekly|monthly>\n"
+                "  Preview scheduled reports with sample data\n\n"
+            )
+
+        help_text += "For detailed documentation, see PROVIDER_SYSTEM.md"
 
     await update.message.reply_text(help_text)
 
@@ -1526,6 +1535,140 @@ async def list_users_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("Error fetching users. Please try again.")
 
 
+async def preview_report_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /preview_report command - preview scheduled reports (Dev mode only)"""
+    if not await auth_middleware(update, context):
+        return
+
+    user = context.user_data["db_user"]
+
+    # Check if user is super admin
+    if not user.is_super_admin:
+        await update.message.reply_text(
+            "[ACCESS DENIED]\n\n"
+            "This command requires super admin privileges."
+        )
+        return
+
+    # Check if in dev mode
+    if settings.environment != "dev":
+        await update.message.reply_text(
+            "[DEV MODE ONLY]\n\n"
+            "This command is only available in development environment.\n"
+            "Current environment: " + settings.environment
+        )
+        return
+
+    # Parse arguments
+    if len(context.args) < 1:
+        await update.message.reply_text(
+            "[USAGE]\n\n"
+            "/preview_report <type>\n\n"
+            "*Report Types:*\n"
+            "  • daily - Daily service report\n"
+            "  • weekly - Weekly service report\n"
+            "  • monthly - Monthly service report\n\n"
+            "*Examples:*\n"
+            "`/preview_report daily` - Preview today's report\n"
+            "`/preview_report weekly` - Preview this week's report\n"
+            "`/preview_report monthly` - Preview this month's report\n\n"
+            "*Note:* Uses sample data for testing visualization",
+            parse_mode='Markdown'
+        )
+        return
+
+    report_type = context.args[0].lower()
+
+    if report_type not in ["daily", "weekly", "monthly"]:
+        await update.message.reply_text(
+            "[INVALID REPORT TYPE]\n\n"
+            f"'{report_type}' is not a valid report type.\n"
+            "Valid types: daily, weekly, monthly\n\n"
+            "Use `/preview_report` without arguments to see usage.",
+            parse_mode='Markdown'
+        )
+        return
+
+    try:
+        from reports.generator import ReportGenerator
+        from reports.sample_data import (
+            generate_daily_sample_data,
+            generate_weekly_sample_data,
+            generate_monthly_sample_data
+        )
+
+        await update.message.reply_text(
+            f"🔄 Generating {report_type} report with sample data...\n"
+            "This may take a few seconds."
+        )
+
+        generator = ReportGenerator()
+
+        if report_type == "daily":
+            data = generate_daily_sample_data()
+            report = generator.generate_daily_report(
+                date=data["date"],
+                services=data["services"],
+                alerts=data["alerts"]
+            )
+        elif report_type == "weekly":
+            data = generate_weekly_sample_data()
+            report = generator.generate_weekly_report(
+                start_date=data["start_date"],
+                end_date=data["end_date"],
+                services=data["services"],
+                alerts=data["alerts"]
+            )
+        else:  # monthly
+            data = generate_monthly_sample_data()
+            report = generator.generate_monthly_report(
+                month=data["month"],
+                services=data["services"],
+                alerts=data["alerts"]
+            )
+
+        # Split report if too long (Telegram limit is 4096 chars)
+        if len(report) > 4000:
+            # Split into chunks
+            lines = report.split("\n")
+            current_chunk = ""
+            chunks = []
+
+            for line in lines:
+                if len(current_chunk) + len(line) + 1 > 4000:
+                    chunks.append(current_chunk)
+                    current_chunk = line + "\n"
+                else:
+                    current_chunk += line + "\n"
+
+            if current_chunk:
+                chunks.append(current_chunk)
+
+            # Send chunks
+            for i, chunk in enumerate(chunks):
+                if i == 0:
+                    await update.message.reply_text(f"```\n{chunk}\n```", parse_mode='Markdown')
+                else:
+                    await update.message.reply_text(f"```\n{chunk}\n```", parse_mode='Markdown')
+        else:
+            await update.message.reply_text(f"```\n{report}\n```", parse_mode='Markdown')
+
+        log.info(
+            "report_previewed",
+            admin_id=user.id,
+            report_type=report_type
+        )
+
+    except Exception as e:
+        log.error("preview_report_handler_error", error=str(e), report_type=report_type)
+        await update.message.reply_text(
+            "[ERROR]\n\n"
+            f"An error occurred while generating the {report_type} report.\n"
+            f"Error: {str(e)}\n\n"
+            "Please check the logs for more details."
+        )
+
+
 async def check_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /check command - perform manual health or credit checks"""
     if not await auth_middleware(update, context):
@@ -1868,6 +2011,7 @@ def create_bot(environment: str) -> Application:
     application.add_handler(CommandHandler("set_api_key", set_api_key_handler))
     application.add_handler(CommandHandler("set_tracking", set_tracking_handler))
     application.add_handler(CommandHandler("list_users", list_users_handler))
+    application.add_handler(CommandHandler("preview_report", preview_report_handler))
 
     log.info("telegram_bot_created", bot_username=bot_name, handlers=len(application.handlers))
 
