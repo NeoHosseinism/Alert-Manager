@@ -121,6 +121,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"/status - Show service status\n"
             f"/services - List your services\n"
             f"/alerts - Recent alerts\n"
+            f"/check <health|credit> - Manual check\n"
             f"/mute <service_id> <hours> - Mute alerts\n"
             f"/unmute <service_id> - Unmute alerts\n"
             f"/muted - Show muted services\n\n"
@@ -359,6 +360,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/status - Show real-time service status\n"
         "/services - List services you have access to\n"
         "/alerts - View recent alerts\n"
+        "/check <mode> [service_id] - Manual check (health/credit)\n"
         "/mute <service_id> <hours> - Mute alerts for a service\n"
         "/unmute <service_id> - Unmute alerts for a service\n"
         "/muted - List all muted services\n\n"
@@ -1523,6 +1525,288 @@ async def list_users_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("Error fetching users. Please try again.")
 
 
+async def check_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /check command - perform manual health or credit checks"""
+    if not await auth_middleware(update, context):
+        return
+
+    user = context.user_data["db_user"]
+
+    # Parse arguments
+    if len(context.args) < 1:
+        await update.message.reply_text(
+            "[USAGE]\n\n"
+            "/check <mode> [service_id]\n\n"
+            "*Modes:*\n"
+            "  • health - Check service health endpoints\n"
+            "  • credit - Check API credit balances\n\n"
+            "*Examples:*\n"
+            "`/check health` - Check all your health services\n"
+            "`/check credit` - Check all your credit services\n"
+            "`/check health 5` - Check specific service by ID\n"
+            "`/check credit 5` - Check credit for specific service\n\n"
+            "*Note:* Manual checks are rate-limited to once per minute per service.",
+            parse_mode='Markdown'
+        )
+        return
+
+    # Parse mode
+    mode = context.args[0].lower()
+    if mode not in ["health", "credit"]:
+        await update.message.reply_text(
+            "[INVALID MODE]\n\n"
+            f"'{mode}' is not a valid check mode.\n"
+            "Valid modes: health, credit\n\n"
+            "Use `/check` without arguments to see usage.",
+            parse_mode='Markdown'
+        )
+        return
+
+    # Parse optional service ID
+    service_id = None
+    if len(context.args) > 1:
+        try:
+            service_id = int(context.args[1])
+        except ValueError:
+            await update.message.reply_text(
+                "[INVALID INPUT]\n\n"
+                "Service ID must be a number."
+            )
+            return
+
+    try:
+        # Get services based on role and filter by type
+        async with get_session() as session:
+            from repositories.service_repository import ServiceRepository
+            service_repo = ServiceRepository(session)
+
+            if user.is_super_admin:
+                all_services = await service_repo.get_active_services()
+            else:
+                all_services = await service_repo.get_user_services(user.id)
+
+        # Filter by service ID if specified
+        if service_id:
+            services = [s for s in all_services if s.id == service_id]
+            if not services:
+                await update.message.reply_text(
+                    "[SERVICE NOT FOUND]\n\n"
+                    f"Service ID {service_id} not found or you don't have access to it.\n"
+                    "Use `/services` to see your available services.",
+                    parse_mode='Markdown'
+                )
+                return
+        else:
+            # Filter by service type based on mode
+            expected_type = "health_check" if mode == "health" else "api_credit"
+            services = [s for s in all_services if s.service_type == expected_type]
+
+        if not services:
+            service_type_name = "health check" if mode == "health" else "API credit"
+            await update.message.reply_text(
+                f"[NO SERVICES]\n\n"
+                f"You don't have any {service_type_name} services to check.\n"
+                "Use `/services` to see all your services.",
+                parse_mode='Markdown'
+            )
+            return
+
+        # Check rate limits for each service
+        from utils.rate_limiter import check_rate_limit
+
+        rate_limited_services = []
+        services_to_check = []
+
+        for service in services:
+            allowed, remaining_seconds = check_rate_limit(user.id, service.id, mode)
+            if not allowed:
+                rate_limited_services.append((service, remaining_seconds))
+            else:
+                services_to_check.append(service)
+
+        # If all services are rate-limited, show error
+        if not services_to_check:
+            if len(rate_limited_services) == 1:
+                service, remaining = rate_limited_services[0]
+                await update.message.reply_text(
+                    f"[RATE LIMIT]\n\n"
+                    f"You checked '{service.name}' recently.\n"
+                    f"Please wait {remaining} more seconds before checking again."
+                )
+            else:
+                await update.message.reply_text(
+                    "[RATE LIMIT]\n\n"
+                    "All services have been checked recently.\n"
+                    "Please wait before checking again."
+                )
+            return
+
+        # Show rate-limited services as warning if some are available
+        if rate_limited_services:
+            warning_msg = "[RATE LIMIT WARNING]\n\n"
+            warning_msg += "Some services were skipped due to rate limiting:\n"
+            for service, remaining in rate_limited_services:
+                warning_msg += f"  • {service.name} (wait {remaining}s)\n"
+            warning_msg += "\n"
+            await update.message.reply_text(warning_msg)
+
+        # Send progress message
+        progress_msg = await update.message.reply_text(
+            f"🔄 Checking {len(services_to_check)} service(s)...\n"
+            "This may take a few seconds."
+        )
+
+        # Perform checks in parallel
+        if mode == "health":
+            results = await _perform_health_checks(services_to_check)
+        else:  # credit
+            results = await _perform_credit_checks(services_to_check)
+
+        # Delete progress message
+        try:
+            await progress_msg.delete()
+        except Exception:
+            pass  # Ignore if message already deleted
+
+        # Format and send results
+        from datetime import datetime
+        from utils.formatting import format_health_check_result, format_credit_check_result
+
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        if mode == "health":
+            header = "🏥 Manual Health Check Report\n"
+            header += f"Checked at: {timestamp}\n\n"
+        else:
+            header = "💳 Manual Credit Check Report\n"
+            header += f"Checked at: {timestamp}\n\n"
+
+        message = header
+
+        # Add results
+        success_count = 0
+        for service, result in results:
+            if mode == "health":
+                if result.success:
+                    success_count += 1
+                formatted = format_health_check_result(
+                    service.name,
+                    service.environment,
+                    result.success,
+                    result.response_time_ms,
+                    result.status_code,
+                    result.error_message
+                )
+            else:  # credit
+                if result.success:
+                    success_count += 1
+                formatted = format_credit_check_result(
+                    service.name,
+                    service.environment,
+                    result.metrics,
+                    service.credit_threshold
+                )
+
+            message += formatted + "\n\n"
+
+        # Add summary
+        message += "---\n"
+        message += f"{success_count}/{len(services_to_check)} checks successful"
+
+        # Split message if too long (Telegram limit is 4096 chars)
+        if len(message) > 4000:
+            # Send in chunks
+            chunks = []
+            current_chunk = header
+            for service, result in results:
+                if mode == "health":
+                    formatted = format_health_check_result(
+                        service.name,
+                        service.environment,
+                        result.success,
+                        result.response_time_ms,
+                        result.status_code,
+                        result.error_message
+                    )
+                else:
+                    formatted = format_credit_check_result(
+                        service.name,
+                        service.environment,
+                        result.metrics,
+                        service.credit_threshold
+                    )
+
+                if len(current_chunk) + len(formatted) + 20 > 4000:
+                    chunks.append(current_chunk)
+                    current_chunk = formatted + "\n\n"
+                else:
+                    current_chunk += formatted + "\n\n"
+
+            if current_chunk:
+                current_chunk += "---\n"
+                current_chunk += f"{success_count}/{len(services_to_check)} checks successful"
+                chunks.append(current_chunk)
+
+            for chunk in chunks:
+                await update.message.reply_text(chunk)
+        else:
+            await update.message.reply_text(message)
+
+    except Exception as e:
+        log.error("check_handler_error", error=str(e), mode=mode, user_id=user.id)
+        await update.message.reply_text(
+            "[ERROR]\n\n"
+            "An error occurred while performing the check.\n"
+            "Please try again later."
+        )
+
+
+async def _perform_health_checks(services):
+    """Perform health checks for multiple services in parallel"""
+    from monitoring.health_checker import HealthChecker
+
+    health_checker = HealthChecker()
+
+    async def check_one(service):
+        try:
+            result = await health_checker.check_service(service)
+            return (service, result)
+        except Exception as e:
+            log.error("manual_health_check_error", service=service.name, error=str(e))
+            from monitoring.health_checker import HealthCheckResult
+            return (service, HealthCheckResult(
+                success=False,
+                error_message=f"Check failed: {str(e)}"
+            ))
+
+    tasks = [check_one(service) for service in services]
+    results = await asyncio.gather(*tasks)
+    return results
+
+
+async def _perform_credit_checks(services):
+    """Perform credit checks for multiple services in parallel"""
+    from monitoring.credit_monitor import CreditMonitor
+
+    credit_monitor = CreditMonitor()
+
+    async def check_one(service):
+        try:
+            result = await credit_monitor.check_service(service)
+            return (service, result)
+        except Exception as e:
+            log.error("manual_credit_check_error", service=service.name, error=str(e))
+            from monitoring.credit_monitor import CreditCheckResult
+            return (service, CreditCheckResult(
+                success=False,
+                error=f"Check failed: {str(e)}"
+            ))
+
+    tasks = [check_one(service) for service in services]
+    results = await asyncio.gather(*tasks)
+    return results
+
+
 def create_bot(environment: str) -> Application:
     """
     Create Telegram bot application
@@ -1557,6 +1841,7 @@ def create_bot(environment: str) -> Application:
     # User commands
     application.add_handler(CommandHandler("services", services_handler))
     application.add_handler(CommandHandler("alerts", alerts_handler))
+    application.add_handler(CommandHandler("check", check_handler))
     application.add_handler(CommandHandler("mute", mute_handler))
     application.add_handler(CommandHandler("unmute", unmute_handler))
     application.add_handler(CommandHandler("muted", muted_handler))
