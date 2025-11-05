@@ -2,6 +2,7 @@
 Telegram bot with authentication and role-based commands
 This is a simplified but functional implementation with key features.
 """
+import asyncio
 from datetime import datetime
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, ConversationHandler
@@ -121,6 +122,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"/status - Show service status\n"
             f"/services - List your services\n"
             f"/alerts - Recent alerts\n"
+            f"/check <health|credit> - Manual check\n"
             f"/mute <service_id> <hours> - Mute alerts\n"
             f"/unmute <service_id> - Unmute alerts\n"
             f"/muted - Show muted services\n\n"
@@ -359,6 +361,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/status - Show real-time service status\n"
         "/services - List services you have access to\n"
         "/alerts - View recent alerts\n"
+        "/check <mode> [service_id] - Manual check (health/credit)\n"
         "/mute <service_id> <hours> - Mute alerts for a service\n"
         "/unmute <service_id> - Unmute alerts for a service\n"
         "/muted - List all muted services\n\n"
@@ -394,8 +397,15 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "  Set encrypted API key for credit tracking\n\n"
             "/set_tracking <service_id> [methods] [paths...]\n"
             "  Configure API tracking methods (optional)\n\n"
-            "For detailed documentation, see PROVIDER_SYSTEM.md"
         )
+
+        # Add dev-only commands
+        if settings.environment == "dev":
+            help_text += (
+                "Development Commands:\n"
+                "/preview_report <daily|weekly|monthly>\n"
+                "  Preview scheduled reports with sample data\n"
+            )
 
     await update.message.reply_text(help_text)
 
@@ -444,8 +454,26 @@ async def services_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"   Type: {service.service_type}\n"
                 f"   Environment: {service.environment}\n"
                 f"   URL: {url}\n"
-                f"   Check Interval: {service.check_interval_seconds}s\n\n"
+                f"   Check Interval: {service.check_interval_seconds}s\n"
             )
+
+            # Show threshold information for API credit services
+            if service.service_type == "api_credit":
+                if service.thresholds_config:
+                    # Multi-threshold config (e.g., OpenRouter with wallet + key)
+                    thresholds_str = "   Thresholds:\n"
+                    if "wallet_remaining" in service.thresholds_config:
+                        thresholds_str += f"      Wallet: ${service.thresholds_config['wallet_remaining']}\n"
+                    if "key_remaining" in service.thresholds_config:
+                        thresholds_str += f"      API Key: ${service.thresholds_config['key_remaining']}\n"
+                    message += thresholds_str
+                elif service.credit_threshold:
+                    # Legacy single threshold
+                    message += f"   Threshold: ${service.credit_threshold}\n"
+                else:
+                    message += "   Threshold: Not set\n"
+
+            message += "\n"
 
         await update.message.reply_text(message)
 
@@ -1113,13 +1141,17 @@ async def edit_service_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             "  • expected_status_code - Expected HTTP status (default 200)\n"
             "  • timeout_seconds - Request timeout (default 10)\n\n"
             "API Credit Fields:\n"
-            "  • credit_threshold - Low credit alert threshold\n"
+            "  • credit_threshold - Low credit alert threshold (legacy)\n"
+            "  • wallet_threshold - Wallet remaining credit threshold (OpenRouter)\n"
+            "  • key_threshold - API key remaining credit threshold (OpenRouter)\n"
             "  • credit_check_interval_hours - Check interval (hours)\n\n"
             "Examples:\n"
             "/edit_service 3 name MyNewAPI\n"
             "/edit_service 3 is_active false\n"
             "/edit_service 3 check_interval_seconds 600\n"
-            "/edit_service 3 credit_threshold 10.50"
+            "/edit_service 3 credit_threshold 10.50\n"
+            "/edit_service 3 wallet_threshold 15.00\n"
+            "/edit_service 3 key_threshold 5.00"
         )
         return
 
@@ -1138,7 +1170,7 @@ async def edit_service_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     valid_fields = [
         "name", "endpoint_url", "is_active", "check_interval_seconds",
         "expected_status_code", "timeout_seconds",
-        "credit_threshold", "credit_check_interval_hours"
+        "credit_threshold", "wallet_threshold", "key_threshold", "credit_check_interval_hours"
     ]
     if field not in valid_fields:
         await update.message.reply_text(
@@ -1199,6 +1231,27 @@ async def edit_service_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         "credit_threshold must be a number (e.g., 10.50)."
                     )
                     return
+            elif field in ["wallet_threshold", "key_threshold"]:
+                # Handle multi-threshold config (wallet_threshold, key_threshold)
+                try:
+                    threshold_value = float(new_value)
+                except ValueError:
+                    await update.message.reply_text(
+                        f"[INVALID VALUE]\n\n"
+                        f"{field} must be a number (e.g., 10.50)."
+                    )
+                    return
+
+                # Get current thresholds_config or create new one
+                thresholds_config = target_service.thresholds_config or {}
+
+                # Update the specific threshold
+                if field == "wallet_threshold":
+                    thresholds_config["wallet_remaining"] = threshold_value
+                elif field == "key_threshold":
+                    thresholds_config["key_remaining"] = threshold_value
+
+                update_data["thresholds_config"] = thresholds_config
 
             # Update service
             await service_repo.update(service_id, **update_data)
@@ -1208,7 +1261,26 @@ async def edit_service_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             updated_service = await service_repo.get_by_id(service_id)
 
         # Format the field value for display
-        display_value = getattr(updated_service, field)
+        if field in ["wallet_threshold", "key_threshold"]:
+            # For threshold config fields, show the value from the JSON
+            if field == "wallet_threshold":
+                display_value = updated_service.thresholds_config.get("wallet_remaining") if updated_service.thresholds_config else None
+            else:  # key_threshold
+                display_value = updated_service.thresholds_config.get("key_remaining") if updated_service.thresholds_config else None
+        else:
+            display_value = getattr(updated_service, field)
+
+        # Build threshold info string for credit services
+        threshold_info = ""
+        if updated_service.service_type == "api_credit":
+            if updated_service.thresholds_config:
+                threshold_info = "\nThresholds:\n"
+                if "wallet_remaining" in updated_service.thresholds_config:
+                    threshold_info += f"  Wallet: ${updated_service.thresholds_config['wallet_remaining']}\n"
+                if "key_remaining" in updated_service.thresholds_config:
+                    threshold_info += f"  API Key: ${updated_service.thresholds_config['key_remaining']}\n"
+            elif updated_service.credit_threshold:
+                threshold_info = f"\nThreshold: ${updated_service.credit_threshold}\n"
 
         await update.message.reply_text(
             "[SERVICE UPDATED]\n\n"
@@ -1217,7 +1289,8 @@ async def edit_service_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             f"Type: {updated_service.service_type}\n"
             f"URL: {updated_service.endpoint_url or 'N/A'}\n"
             f"Active: {updated_service.is_active}\n"
-            f"Check Interval: {updated_service.check_interval_seconds}s\n\n"
+            f"Check Interval: {updated_service.check_interval_seconds}s"
+            f"{threshold_info}\n\n"
             f"Updated field: {field}\n"
             f"New value: {display_value}"
         )
@@ -1523,6 +1596,428 @@ async def list_users_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("Error fetching users. Please try again.")
 
 
+async def preview_report_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /preview_report command - preview scheduled reports (Dev mode only)"""
+    if not await auth_middleware(update, context):
+        return
+
+    user = context.user_data["db_user"]
+
+    # Check if user is super admin
+    if not user.is_super_admin:
+        await update.message.reply_text(
+            "[ACCESS DENIED]\n\n"
+            "This command requires super admin privileges."
+        )
+        return
+
+    # Check if in dev mode
+    if settings.environment != "dev":
+        await update.message.reply_text(
+            "[DEV MODE ONLY]\n\n"
+            "This command is only available in development environment.\n"
+            "Current environment: " + settings.environment
+        )
+        return
+
+    # Parse arguments
+    if len(context.args) < 1:
+        await update.message.reply_text(
+            "[USAGE]\n\n"
+            "/preview_report <type>\n\n"
+            "*Report Types:*\n"
+            "  • daily - Daily service report\n"
+            "  • weekly - Weekly service report\n"
+            "  • monthly - Monthly service report\n\n"
+            "*Examples:*\n"
+            "`/preview_report daily` - Preview today's report\n"
+            "`/preview_report weekly` - Preview this week's report\n"
+            "`/preview_report monthly` - Preview this month's report\n\n"
+            "*Note:* Uses sample data for testing visualization",
+            parse_mode='Markdown'
+        )
+        return
+
+    report_type = context.args[0].lower()
+
+    if report_type not in ["daily", "weekly", "monthly"]:
+        await update.message.reply_text(
+            "[INVALID REPORT TYPE]\n\n"
+            f"'{report_type}' is not a valid report type.\n"
+            "Valid types: daily, weekly, monthly\n\n"
+            "Use `/preview_report` without arguments to see usage.",
+            parse_mode='Markdown'
+        )
+        return
+
+    try:
+        from reports.generator import ReportGenerator
+        from reports.sample_data import (
+            generate_daily_sample_data,
+            generate_weekly_sample_data,
+            generate_monthly_sample_data
+        )
+
+        await update.message.reply_text(
+            f"🔄 Generating {report_type} report with sample data...\n"
+            "This may take a few seconds."
+        )
+
+        generator = ReportGenerator()
+
+        if report_type == "daily":
+            data = generate_daily_sample_data()
+            report = generator.generate_daily_report(
+                date=data["date"],
+                services=data["services"],
+                alerts=data["alerts"]
+            )
+        elif report_type == "weekly":
+            data = generate_weekly_sample_data()
+            report = generator.generate_weekly_report(
+                start_date=data["start_date"],
+                end_date=data["end_date"],
+                services=data["services"],
+                alerts=data["alerts"]
+            )
+        else:  # monthly
+            data = generate_monthly_sample_data()
+            report = generator.generate_monthly_report(
+                month=data["month"],
+                services=data["services"],
+                alerts=data["alerts"]
+            )
+
+        # Split report if too long (Telegram limit is 4096 chars)
+        if len(report) > 4000:
+            # Split into chunks
+            lines = report.split("\n")
+            current_chunk = ""
+            chunks = []
+
+            for line in lines:
+                if len(current_chunk) + len(line) + 1 > 4000:
+                    chunks.append(current_chunk)
+                    current_chunk = line + "\n"
+                else:
+                    current_chunk += line + "\n"
+
+            if current_chunk:
+                chunks.append(current_chunk)
+
+            # Send chunks
+            for i, chunk in enumerate(chunks):
+                # Use monospace HTML to avoid Markdown parsing issues
+                escaped_chunk = chunk.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                await update.message.reply_text(f"<pre>{escaped_chunk}</pre>", parse_mode='HTML')
+        else:
+            # Use monospace HTML to avoid Markdown parsing issues
+            escaped_report = report.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            await update.message.reply_text(f"<pre>{escaped_report}</pre>", parse_mode='HTML')
+
+        log.info(
+            "report_previewed",
+            admin_id=user.id,
+            report_type=report_type
+        )
+
+    except Exception as e:
+        log.error("preview_report_handler_error", error=str(e), report_type=report_type)
+        await update.message.reply_text(
+            "[ERROR]\n\n"
+            f"An error occurred while generating the {report_type} report.\n"
+            f"Error: {str(e)}\n\n"
+            "Please check the logs for more details."
+        )
+
+
+async def check_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /check command - perform manual health or credit checks"""
+    if not await auth_middleware(update, context):
+        return
+
+    user = context.user_data["db_user"]
+
+    # Parse arguments
+    if len(context.args) < 1:
+        await update.message.reply_text(
+            "[USAGE]\n\n"
+            "/check <mode> [service_id]\n\n"
+            "*Modes:*\n"
+            "  • health - Check service health endpoints\n"
+            "  • credit - Check API credit balances\n\n"
+            "*Examples:*\n"
+            "`/check health` - Check all your health services\n"
+            "`/check credit` - Check all your credit services\n"
+            "`/check health 5` - Check specific service by ID\n"
+            "`/check credit 5` - Check credit for specific service\n\n"
+            "*Note:* Manual checks are rate-limited to once per minute per service.",
+            parse_mode='Markdown'
+        )
+        return
+
+    # Parse mode
+    mode = context.args[0].lower()
+    if mode not in ["health", "credit"]:
+        await update.message.reply_text(
+            "[INVALID MODE]\n\n"
+            f"'{mode}' is not a valid check mode.\n"
+            "Valid modes: health, credit\n\n"
+            "Use `/check` without arguments to see usage.",
+            parse_mode='Markdown'
+        )
+        return
+
+    # Parse optional service ID
+    service_id = None
+    if len(context.args) > 1:
+        try:
+            service_id = int(context.args[1])
+        except ValueError:
+            await update.message.reply_text(
+                "[INVALID INPUT]\n\n"
+                "Service ID must be a number."
+            )
+            return
+
+    try:
+        # Get services based on role and filter by type
+        async with get_session() as session:
+            from repositories.service_repository import ServiceRepository
+            service_repo = ServiceRepository(session)
+
+            if user.is_super_admin:
+                all_services = await service_repo.get_active_services()
+            else:
+                all_services = await service_repo.get_user_services(user.id)
+
+        # Filter by service ID if specified
+        if service_id:
+            services = [s for s in all_services if s.id == service_id]
+            if not services:
+                await update.message.reply_text(
+                    "[SERVICE NOT FOUND]\n\n"
+                    f"Service ID {service_id} not found or you don't have access to it.\n"
+                    "Use `/services` to see your available services.",
+                    parse_mode='Markdown'
+                )
+                return
+        else:
+            # Filter by service type based on mode
+            expected_type = "health_check" if mode == "health" else "api_credit"
+            services = [s for s in all_services if s.service_type == expected_type]
+
+        if not services:
+            service_type_name = "health check" if mode == "health" else "API credit"
+            await update.message.reply_text(
+                f"[NO SERVICES]\n\n"
+                f"You don't have any {service_type_name} services to check.\n"
+                "Use `/services` to see all your services.",
+                parse_mode='Markdown'
+            )
+            return
+
+        # Check rate limits for each service
+        from utils.rate_limiter import check_rate_limit
+
+        rate_limited_services = []
+        services_to_check = []
+
+        for service in services:
+            allowed, remaining_seconds = check_rate_limit(user.id, service.id, mode)
+            if not allowed:
+                rate_limited_services.append((service, remaining_seconds))
+            else:
+                services_to_check.append(service)
+
+        # If all services are rate-limited, show error
+        if not services_to_check:
+            if len(rate_limited_services) == 1:
+                service, remaining = rate_limited_services[0]
+                await update.message.reply_text(
+                    f"[RATE LIMIT]\n\n"
+                    f"You checked '{service.name}' recently.\n"
+                    f"Please wait {remaining} more seconds before checking again."
+                )
+            else:
+                await update.message.reply_text(
+                    "[RATE LIMIT]\n\n"
+                    "All services have been checked recently.\n"
+                    "Please wait before checking again."
+                )
+            return
+
+        # Show rate-limited services as warning if some are available
+        if rate_limited_services:
+            warning_msg = "[RATE LIMIT WARNING]\n\n"
+            warning_msg += "Some services were skipped due to rate limiting:\n"
+            for service, remaining in rate_limited_services:
+                warning_msg += f"  • {service.name} (wait {remaining}s)\n"
+            warning_msg += "\n"
+            await update.message.reply_text(warning_msg)
+
+        # Send progress message
+        progress_msg = await update.message.reply_text(
+            f"🔄 Checking {len(services_to_check)} service(s)...\n"
+            "This may take a few seconds."
+        )
+
+        # Perform checks in parallel
+        if mode == "health":
+            results = await _perform_health_checks(services_to_check)
+        else:  # credit
+            results = await _perform_credit_checks(services_to_check)
+
+        # Delete progress message
+        try:
+            await progress_msg.delete()
+        except Exception:
+            pass  # Ignore if message already deleted
+
+        # Format and send results
+        from datetime import datetime
+        from utils.formatting import format_health_check_result, format_credit_check_result
+        from utils.jalali import format_jalali_datetime
+
+        now = datetime.utcnow()
+        timestamp_gregorian = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+        timestamp_jalali = format_jalali_datetime(now, include_time=True)
+
+        if mode == "health":
+            header = "🏥 Manual Health Check Report\n"
+            header += f"Checked at: {timestamp_gregorian}\n"
+            header += f"           {timestamp_jalali} (Persian)\n\n"
+        else:
+            header = "💳 Manual Credit Check Report\n"
+            header += f"Checked at: {timestamp_gregorian}\n"
+            header += f"           {timestamp_jalali} (Persian)\n\n"
+
+        message = header
+
+        # Add results
+        success_count = 0
+        for service, result in results:
+            if mode == "health":
+                if result.success:
+                    success_count += 1
+                formatted = format_health_check_result(
+                    service.name,
+                    service.environment,
+                    result.success,
+                    result.response_time_ms,
+                    result.status_code,
+                    result.error_message
+                )
+            else:  # credit
+                if result.success:
+                    success_count += 1
+                formatted = format_credit_check_result(
+                    service.name,
+                    service.environment,
+                    result.metrics,
+                    service.credit_threshold
+                )
+
+            message += formatted + "\n\n"
+
+        # Add summary
+        message += "---\n"
+        message += f"{success_count}/{len(services_to_check)} checks successful"
+
+        # Split message if too long (Telegram limit is 4096 chars)
+        if len(message) > 4000:
+            # Send in chunks
+            chunks = []
+            current_chunk = header
+            for service, result in results:
+                if mode == "health":
+                    formatted = format_health_check_result(
+                        service.name,
+                        service.environment,
+                        result.success,
+                        result.response_time_ms,
+                        result.status_code,
+                        result.error_message
+                    )
+                else:
+                    formatted = format_credit_check_result(
+                        service.name,
+                        service.environment,
+                        result.metrics,
+                        service.credit_threshold
+                    )
+
+                if len(current_chunk) + len(formatted) + 20 > 4000:
+                    chunks.append(current_chunk)
+                    current_chunk = formatted + "\n\n"
+                else:
+                    current_chunk += formatted + "\n\n"
+
+            if current_chunk:
+                current_chunk += "---\n"
+                current_chunk += f"{success_count}/{len(services_to_check)} checks successful"
+                chunks.append(current_chunk)
+
+            for chunk in chunks:
+                await update.message.reply_text(chunk)
+        else:
+            await update.message.reply_text(message)
+
+    except Exception as e:
+        log.error("check_handler_error", error=str(e), mode=mode, user_id=user.id)
+        await update.message.reply_text(
+            "[ERROR]\n\n"
+            "An error occurred while performing the check.\n"
+            "Please try again later."
+        )
+
+
+async def _perform_health_checks(services):
+    """Perform health checks for multiple services in parallel"""
+    from monitoring.health_checker import HealthChecker
+
+    health_checker = HealthChecker()
+
+    async def check_one(service):
+        try:
+            result = await health_checker.check_service(service)
+            return (service, result)
+        except Exception as e:
+            log.error("manual_health_check_error", service=service.name, error=str(e))
+            from monitoring.health_checker import HealthCheckResult
+            return (service, HealthCheckResult(
+                success=False,
+                error_message=f"Check failed: {str(e)}"
+            ))
+
+    tasks = [check_one(service) for service in services]
+    results = await asyncio.gather(*tasks)
+    return results
+
+
+async def _perform_credit_checks(services):
+    """Perform credit checks for multiple services in parallel"""
+    from monitoring.credit_monitor import CreditMonitor
+
+    credit_monitor = CreditMonitor()
+
+    async def check_one(service):
+        try:
+            result = await credit_monitor.check_service(service)
+            return (service, result)
+        except Exception as e:
+            log.error("manual_credit_check_error", service=service.name, error=str(e))
+            from monitoring.credit_monitor import CreditCheckResult
+            return (service, CreditCheckResult(
+                success=False,
+                error=f"Check failed: {str(e)}"
+            ))
+
+    tasks = [check_one(service) for service in services]
+    results = await asyncio.gather(*tasks)
+    return results
+
+
 def create_bot(environment: str) -> Application:
     """
     Create Telegram bot application
@@ -1557,6 +2052,7 @@ def create_bot(environment: str) -> Application:
     # User commands
     application.add_handler(CommandHandler("services", services_handler))
     application.add_handler(CommandHandler("alerts", alerts_handler))
+    application.add_handler(CommandHandler("check", check_handler))
     application.add_handler(CommandHandler("mute", mute_handler))
     application.add_handler(CommandHandler("unmute", unmute_handler))
     application.add_handler(CommandHandler("muted", muted_handler))
@@ -1577,6 +2073,7 @@ def create_bot(environment: str) -> Application:
     application.add_handler(CommandHandler("set_api_key", set_api_key_handler))
     application.add_handler(CommandHandler("set_tracking", set_tracking_handler))
     application.add_handler(CommandHandler("list_users", list_users_handler))
+    application.add_handler(CommandHandler("preview_report", preview_report_handler))
 
     log.info("telegram_bot_created", bot_username=bot_name, handlers=len(application.handlers))
 

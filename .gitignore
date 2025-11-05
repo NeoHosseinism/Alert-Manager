@@ -66,8 +66,9 @@ logs/
 # Alembic
 alembic/versions/*.pyc
 
-# Reports
-reports/
+# Generated Reports (but allow src/reports/ source code)
+/reports/
+generated_reports/
 *.png
 *.jpg
 *.pdf

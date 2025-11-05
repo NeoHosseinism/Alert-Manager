@@ -6,6 +6,7 @@ with guided configuration through multi-step conversation.
 """
 import json
 from typing import Dict, Any
+from warnings import filterwarnings
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes,
@@ -15,12 +16,17 @@ from telegram.ext import (
     CallbackQueryHandler,
     filters
 )
+from telegram.warnings import PTBUserWarning
 
 from config import settings
 from config.logging import get_logger
 from config.providers import get_provider, list_providers, STANDARD_METRICS
 from repositories.service_repository import ServiceRepository
 from core.database import get_session
+
+# Suppress the CallbackQueryHandler warning for ConversationHandler
+# This is expected behavior when using both MessageHandler and CallbackQueryHandler
+filterwarnings(action="ignore", message=r".*CallbackQueryHandler", category=PTBUserWarning)
 
 log = get_logger(__name__)
 

@@ -47,8 +47,15 @@ class Service(Base, TimestampMixin):
     # For API credits
     api_provider: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     api_key_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    credit_threshold: Mapped[Optional[float]] = mapped_column(DECIMAL(10, 2), nullable=True)
+    credit_threshold: Mapped[Optional[float]] = mapped_column(DECIMAL(10, 2), nullable=True)  # Deprecated: Use thresholds_config
     credit_check_interval_hours: Mapped[int] = mapped_column(Integer, default=24, nullable=False)
+
+    # Multi-threshold configuration for providers with multiple credit scopes (e.g., OpenRouter)
+    # JSON structure: {
+    #   "wallet_remaining": 10.0,  # Alert if wallet remaining < $10
+    #   "key_remaining": 5.0       # Alert if API key remaining < $5
+    # }
+    thresholds_config: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
     # API Tracking Configuration
     # JSON structure: {

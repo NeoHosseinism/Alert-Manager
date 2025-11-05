@@ -86,9 +86,56 @@ class CreditMonitor:
                 return CreditCheckResult(success=False, error="No API key configured")
 
             # Get tracking configuration
-            tracking_config = service.api_tracking_config
+            # If service has a provider_id, use the latest provider definition from code
+            # This ensures users always get the latest field mappings without manual refresh
+            tracking_config = None
+
+            if service.api_provider:
+                # Try to get provider from code (case-insensitive)
+                from config.providers import get_provider, PROVIDERS
+
+                # Try exact match first
+                provider_config = get_provider(service.api_provider)
+
+                # If not found, try case-insensitive match
+                if not provider_config:
+                    provider_id_lower = service.api_provider.lower()
+                    for pid, pconfig in PROVIDERS.items():
+                        if pid.lower() == provider_id_lower:
+                            provider_config = pconfig
+                            break
+
+                if provider_config:
+                    # Convert provider config to tracking config format
+                    tracking_config = {
+                        "provider_id": provider_config.provider_id,
+                        "endpoints": []
+                    }
+
+                    for endpoint in provider_config.endpoints:
+                        endpoint_dict = {
+                            "name": endpoint.name,
+                            "path": endpoint.path,
+                            "method": endpoint.method,
+                            "headers_template": endpoint.headers_template,
+                            "response_data_path": endpoint.response_data_path,
+                            "field_mappings": endpoint.field_mappings,
+                        }
+                        if endpoint.request_body:
+                            endpoint_dict["request_body"] = endpoint.request_body
+                        tracking_config["endpoints"].append(endpoint_dict)
+
+                    self.log.debug(
+                        "using_provider_from_code",
+                        service=service.name,
+                        provider_id=provider_config.provider_id
+                    )
+
+            # Fall back to stored configuration if no provider found
             if not tracking_config:
-                return CreditCheckResult(success=False, error="No tracking configuration")
+                tracking_config = service.api_tracking_config
+                if not tracking_config:
+                    return CreditCheckResult(success=False, error="No tracking configuration")
 
             endpoints = tracking_config.get("endpoints", [])
             if not endpoints:
@@ -110,7 +157,7 @@ class CreditMonitor:
                 error_msg = "; ".join(errors) if errors else "All endpoints failed"
                 return CreditCheckResult(success=False, error=error_msg)
 
-            merged_result = self._merge_results(results, service.credit_threshold)
+            merged_result = self._merge_results(results, service.credit_threshold, service.thresholds_config)
 
             if merged_result.success:
                 self.log.info(
@@ -224,14 +271,16 @@ class CreditMonitor:
             return CreditCheckResult(success=False, error=str(e))
 
     def _merge_results(
-        self, results: List[CreditCheckResult], threshold: Optional[float]
+        self, results: List[CreditCheckResult], threshold: Optional[float],
+        thresholds_config: Optional[Dict[str, Any]] = None
     ) -> CreditCheckResult:
         """
         Merge results from multiple endpoints
 
         Args:
             results: List of credit check results from different endpoints
-            threshold: Credit threshold for alerting
+            threshold: Legacy single credit threshold for alerting
+            thresholds_config: Multi-threshold configuration (e.g., wallet_remaining, key_remaining)
 
         Returns:
             Merged credit check result
@@ -252,8 +301,24 @@ class CreditMonitor:
             threshold=threshold
         )
 
-        # Check if below threshold
-        if threshold and merged.remaining_credit is not None:
+        # Check if below threshold(s)
+        if thresholds_config:
+            # Multi-threshold checking (e.g., OpenRouter with wallet + key)
+            wallet_threshold = thresholds_config.get("wallet_remaining")
+            key_threshold = thresholds_config.get("key_remaining")
+
+            # Check wallet threshold
+            if wallet_threshold and merged_metrics.get("wallet_total_credits") is not None:
+                if merged_metrics["wallet_total_credits"] < wallet_threshold:
+                    merged.below_threshold = True
+
+            # Check API key threshold
+            if key_threshold and merged_metrics.get("key_remaining") is not None:
+                if merged_metrics["key_remaining"] < key_threshold:
+                    merged.below_threshold = True
+
+        elif threshold and merged.remaining_credit is not None:
+            # Legacy single threshold checking
             merged.below_threshold = merged.remaining_credit < threshold
 
         return merged
